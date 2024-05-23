@@ -2272,7 +2272,15 @@ public abstract class ToSource {
               handleInsts(
                   loopChunks,
                   lr,
-                  x -> x.iterator().next() instanceof SSAGotoInstruction,
+                  x -> {
+                    SSAInstruction next = x.iterator().next();
+                    return (next instanceof SSAGotoInstruction) &&
+                            // Check if a GoTo's target is contained in the loop chunks being processed.
+                            // If it is, the GoTo should not be included in the output.
+                            loopChunks.stream().noneMatch(loi ->
+                                    loi.stream().noneMatch(i ->
+                                            i.iIndex() == ((SSAGotoInstruction)next).getTarget()));
+                  },
                   extraHeaderCode);
 
           List<CAstNode> block = new LinkedList<>();
