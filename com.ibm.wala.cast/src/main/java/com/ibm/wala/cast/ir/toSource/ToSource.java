@@ -706,17 +706,21 @@ public abstract class ToSource {
     }
 
     private String toSourceName(int vn) {
-      vn = mergePhis.find(vn);
-      String name = "var_" + vn;
+      int root_vn = mergePhis.find(vn);
+      String name = "var_" + root_vn;
       if (ir.getSymbolTable().isParameter(vn) && ir.getMethod() instanceof AstMethod) {
         return ((AstMethod) ir.getMethod()).getParameterName(vn);
       } else {
-        for (Iterator<SSAInstruction> uses = du.getUses(vn); uses.hasNext(); ) {
-          SSAInstruction uv = uses.next();
-          if (uv.iIndex() >= 0) {
-            String[] names = ir.getLocalNames(uv.iIndex(), vn);
-            if (names != null && names.length > 0) {
-              name = names[0];
+        for (int i = 1; i <= ir.getSymbolTable().getMaxValueNumber(); i++) {
+          if (mergePhis.find(i) == root_vn) {
+            for (Iterator<SSAInstruction> uses = du.getUses(i); uses.hasNext(); ) {
+              SSAInstruction uv = uses.next();
+              if (uv.iIndex() >= 0) {
+                String[] names = ir.getLocalNames(uv.iIndex(), i);
+                if (names != null && names.length > 0) {
+                  name = names[0];
+                }
+              }
             }
           }
         }
