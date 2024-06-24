@@ -590,12 +590,7 @@ public abstract class ToSource {
     private final SymbolTable ST;
     private final DefUse du;
     private final PrunedCFG<SSAInstruction, ISSABasicBlock> cfg;
-    private final Set<ISSABasicBlock> loopHeaders;
-    private final Set<ISSABasicBlock> loopExits;
-    // The blocks that will got outside of the loop, might includes loop control
-    private final Set<ISSABasicBlock> loopBreakers;
-    private final Map<ISSABasicBlock, Set<ISSABasicBlock>> loopControls;
-    private final Set<Set<ISSABasicBlock>> loops;
+    private final Map<ISSABasicBlock, Loop> loops;
     private final SSAInstruction r;
     private final ISSABasicBlock l;
     private final ControlDependenceGraph<ISSABasicBlock> cdg;
@@ -665,10 +660,6 @@ public abstract class ToSource {
       this.ST = parent.ST;
       this.du = parent.du;
       this.cfg = parent.cfg;
-      this.loopHeaders = parent.loopHeaders;
-      this.loopExits = parent.loopExits;
-      this.loopBreakers = parent.loopBreakers;
-      this.loopControls = parent.loopControls;
       this.livenessConflicts = parent.livenessConflicts;
       this.cdg = parent.cdg;
       this.packages = parent.packages;
@@ -830,7 +821,7 @@ public abstract class ToSource {
               cfgStartTimes.get(pred) >= cfgStartTimes.get(succ)
                   && cfgFinishTimes.get(pred) <= cfgFinishTimes.get(succ);
 
-      loopHeaders =
+      Set<ISSABasicBlock> loopHeaders =
           cfg.stream()
               .filter(
                   bb -> {
@@ -847,10 +838,9 @@ public abstract class ToSource {
 
       System.err.println("loop headers: " + loopHeaders);
 
-      loops = HashSetFactory.make();
-      loopExits = HashSetFactory.make();
-      loopBreakers = HashSetFactory.make();
-      loopControls = HashMapFactory.make();
+      loops = HashMapFactory.make();
+      loopHeaders.forEach((header) -> loops.put(header, new Loop(header)));
+
       Graph<ISSABasicBlock> cfgNoBack = GraphSlicer.prune(cfg, (p, s) -> !isBackEdge.test(p, s));
       cfg.forEach(
           n -> {
@@ -860,35 +850,46 @@ public abstract class ToSource {
                       if (isBackEdge.test(p, n)) {
                         System.err.println("back:" + p + " --> " + n);
 
+                        LoopPart part = new LoopPart();
+
+                        Set<ISSABasicBlock> loopExits = HashSetFactory.make();
+                        Set<ISSABasicBlock> loopBreakers = HashSetFactory.make();
+
                         Set<ISSABasicBlock> forward =
                             DFS.getReachableNodes(cfgNoBack, Collections.singleton(n));
                         Set<ISSABasicBlock> backward =
                             DFS.getReachableNodes(
                                 GraphInverter.invert(cfgNoBack), Collections.singleton(p));
 
-                        Set<ISSABasicBlock> loop = HashSetFactory.make(forward);
-                        loop.retainAll(backward);
+                        Set<ISSABasicBlock> allBlocks = HashSetFactory.make(forward);
+                        allBlocks.retainAll(backward);
 
-                        loops.add(loop);
+                        part.setAllBlocks(allBlocks);
+                        part.setLoopHeader(
+                            allBlocks.stream()
+                                .min(Comparator.comparing(ISSABasicBlock::getNumber))
+                                .get());
 
-                        System.err.println("loop: " + loop);
+                        System.err.println("loop: " + allBlocks);
 
-                        loop.forEach(
+                        allBlocks.forEach(
                             bb -> {
                               IteratorUtil.streamify(cfg.getSuccNodes(bb))
-                                  .filter(b -> !loop.contains(b))
+                                  .filter(b -> !allBlocks.contains(b))
                                   .forEach(sb -> loopExits.add(sb));
                             });
+                        part.setLoopExits(loopExits);
+
                         Set<ISSABasicBlock> breakers = HashSetFactory.make();
                         breakers.addAll(
-                            loop.stream()
+                            allBlocks.stream()
                                 .filter(
                                     bb -> {
                                       System.err.println("1: " + bb);
                                       return IteratorUtil.streamify(cfg.getSuccNodes(bb))
                                           .anyMatch(
                                               b -> {
-                                                return !loop.contains(b);
+                                                return !allBlocks.contains(b);
                                               });
                                     })
                                 .filter(
@@ -915,19 +916,26 @@ public abstract class ToSource {
                                           - b.getFirstInstructionIndex();
                                     })
                                 .collect(Collectors.toSet()));
+                        part.setLoopBreakers(loopBreakers);
+
                         assert (breakers.size() > 0);
                         // Pick the first one - the one with smallest number
-                        loopControls.put(
+                        part.setLoopControl(
                             breakers.stream()
                                 .min(Comparator.comparing(ISSABasicBlock::getNumber))
-                                .get(),
-                            loop);
-                        loopBreakers.addAll(breakers);
+                                .get());
+
+                        assert (loops.containsKey(part.getLoopHeader()));
+                        loops.get(part.getLoopHeader()).addLoopPart(part);
                       }
                     });
           });
 
-      System.err.println("loop controls: " + loopControls);
+      System.err.println(
+          "loop controls: "
+              + loops.values().stream()
+                  .map(loop -> loop.getLoopControl())
+                  .collect(Collectors.toList()));
 
       for (ISSABasicBlock b : cfg) {
         if (loopHeaders.contains(b)) {
@@ -1184,8 +1192,12 @@ public abstract class ToSource {
                               chunks,
                               unmergeableValues,
                               (inst instanceof SSAConditionalBranchInstruction)
-                                      && loopControls.containsKey(
-                                          cfg.getBlockForInstruction(inst.iIndex()))
+                                      && loops.values().stream()
+                                          .map(loop -> loop.getLoopControl())
+                                          .anyMatch(
+                                              control ->
+                                                  control.equals(
+                                                      cfg.getBlockForInstruction(inst.iIndex())))
                                       // If it's a while loop then merge instructions in test
                                       // otherwise return null then the instructions will be
                                       // translated
@@ -1250,7 +1262,11 @@ public abstract class ToSource {
                   ISSABasicBlock bb = cfg.getBlockForInstruction(inst.iIndex());
                   if (loopHeaders.containsAll(cfg.getNormalSuccessors(bb))) {
                     System.err.println("loop edge " + inst);
-                  } else if (loopExits.containsAll(cfg.getNormalSuccessors(bb))) {
+                  } else if (loops.values().stream()
+                      .map(loop -> loop.getLoopExits())
+                      .flatMap(Collection::stream)
+                      .collect(Collectors.toSet())
+                      .containsAll(cfg.getNormalSuccessors(bb))) {
                     System.err.println("break edge " + inst);
                   }
                 }
@@ -1266,7 +1282,7 @@ public abstract class ToSource {
 
       // If it's dowhile, loopHeader should not contains this block
       ISSABasicBlock bb = cfg.getBlockForInstruction(inst.iIndex());
-      if (!loopHeaders.contains(bb)) {
+      if (!loops.containsKey(bb)) {
         return false;
       }
 
@@ -1294,7 +1310,10 @@ public abstract class ToSource {
               },
               unmergeableValues,
               (inst instanceof SSAConditionalBranchInstruction)
-                      && loopControls.containsKey(cfg.getBlockForInstruction(inst.iIndex()))
+                      && loops
+                          .get(bb)
+                          .getLoopControl()
+                          .equals(cfg.getBlockForInstruction(inst.iIndex()))
                   ? inst
                   : null);
       return insts.containsAll(regionInsts);
@@ -1377,7 +1396,11 @@ public abstract class ToSource {
     private boolean isInLoopControl(List<SSAInstruction> chunk) {
       return chunk.stream()
           .map(inst -> cfg.getBlockForInstruction(inst.iIndex()))
-          .anyMatch(bb -> loopControls.containsKey(bb));
+          .anyMatch(
+              bb ->
+                  loops.values().stream()
+                      .map(loop -> loop.getLoopControl())
+                      .anyMatch(control -> control.equals(bb)));
     }
 
     // There are some instructions that's part of loop control block but should be translated
@@ -1414,8 +1437,12 @@ public abstract class ToSource {
         for (SSAInstruction inst : chunk) {
           if (inst.iIndex() > 0) {
             ISSABasicBlock blockForInstruction = cfg.getBlockForInstruction(inst.iIndex());
-            if (loopControls.containsKey(blockForInstruction)) {
-              loopBlocks.addAll(loopControls.get(blockForInstruction));
+            Optional<Loop> loop =
+                loops.values().stream()
+                    .filter(part -> part.getAllBlocks().contains(blockForInstruction))
+                    .findFirst();
+            if (loop.isPresent()) {
+              loopBlocks.addAll(loop.get().getAllBlocks());
             }
           }
         }
@@ -1634,7 +1661,10 @@ public abstract class ToSource {
               logHistory(inst);
               inst.visit(this);
               if (root instanceof SSAConditionalBranchInstruction
-                  && loopControls.containsKey(cfg.getBlockForInstruction(root.iIndex()))
+                  && loops.values().stream()
+                      .map(loop -> loop.getLoopControl())
+                      .anyMatch(
+                          control -> control.equals(cfg.getBlockForInstruction(root.iIndex())))
                   && inst.hasDef()
                   && du.getNumberOfUses(vn) > 1) {
 
@@ -1662,15 +1692,20 @@ public abstract class ToSource {
         }
 
         private boolean inLoop(ISSABasicBlock bb) {
-          return loopControls.values().stream().anyMatch(blocks -> blocks.contains(bb));
+          return loops.values().stream().anyMatch(loop -> loop.getAllBlocks().contains(bb));
         }
 
         @Override
         public void visitGoto(SSAGotoInstruction inst) {
           ISSABasicBlock bb = cfg.getBlockForInstruction(inst.iIndex());
-          if (loopHeaders.containsAll(cfg.getNormalSuccessors(bb)) && inLoop(bb)) {
+          if (loops.keySet().containsAll(cfg.getNormalSuccessors(bb)) && inLoop(bb)) {
             node = ast.makeNode(CAstNode.CONTINUE);
-          } else if (loopExits.containsAll(cfg.getNormalSuccessors(bb)) && inLoop(bb)) {
+          } else if (loops.values().stream()
+                  .map(loop -> loop.getLoopExits())
+                  .flatMap(Collection::stream)
+                  .collect(Collectors.toSet())
+                  .containsAll(cfg.getNormalSuccessors(bb))
+              && inLoop(bb)) {
             node = ast.makeNode(CAstNode.BLOCK_STMT, ast.makeNode(CAstNode.BREAK));
           } else {
             node = ast.makeNode(CAstNode.BLOCK_STMT, ast.makeNode(CAstNode.GOTO));
@@ -1951,7 +1986,9 @@ public abstract class ToSource {
                 test = v1;
                 break test;
               } else if (castOp == CAstOperator.OP_EQ) {
-                if (loopControls.containsKey(branchBB)) {
+                if (loops.values().stream()
+                    .map(loop -> loop.getLoopControl())
+                    .anyMatch(control -> control.equals(branchBB))) {
                   test = v1;
                 } else {
                   test = ast.makeNode(CAstNode.UNARY_EXPR, CAstOperator.OP_NOT, v1);
@@ -2049,6 +2086,11 @@ public abstract class ToSource {
           SSACFG.BasicBlock branchBB =
               (BasicBlock) cfg.getBlockForInstruction(instruction.iIndex());
 
+          Optional<Loop> loop =
+              loops.values().stream()
+                  .filter(part -> part.getAllBlocks().contains(branchBB))
+                  .findFirst();
+
           Set<SSAInstruction> testInsts;
           startLog();
           CAstNode v1 = visit(instruction.getUse(0));
@@ -2057,7 +2099,7 @@ public abstract class ToSource {
 
           CAstNode test = getInitialTestNode(instruction, v2, v1, branchBB);
 
-          if (loopControls.containsKey(branchBB)) {
+          if (loop.isPresent() && loop.get().getLoopControl().equals(branchBB)) {
             assert cc.size() <= 2;
 
             LoopType loopType = null;
@@ -2069,16 +2111,14 @@ public abstract class ToSource {
               Set<SSAInstruction> bbInsts =
                   IteratorUtil.streamify(branchBB.iterateNormalInstructions())
                       .collect(Collectors.toSet());
-              if (loopControls.containsKey(branchBB)
-                  && loopHeaders.contains(branchBB)
-                  && covered.containsAll(bbInsts)) {
+              if (loop.get().getLoopHeader().equals(branchBB) && covered.containsAll(bbInsts)) {
                 System.err.println("while loop");
                 loopType = LoopType.WHILE;
                 break loopType;
               }
 
               for (ISSABasicBlock sb : cfg.getNormalSuccessors(branchBB)) {
-                if (loopHeaders.contains(thruTrampolineBlocks(sb))) {
+                if (loop.get().getLoopHeader().equals(thruTrampolineBlocks(sb))) {
                   System.err.println("do loop");
                   loopType = LoopType.DOWHILE;
                   break loopType;
@@ -2088,6 +2128,12 @@ public abstract class ToSource {
               System.err.println("ugly loop");
               loopType = LoopType.WHILETRUE;
             }
+
+            System.out.println(
+                "============lisa====original cal loop type:"
+                    + loopType
+                    + " and the new calc loop type is:"
+                    + LoopHelper.getLoopType(cfg, loop.get()));
 
             // Find out the successor of the loop control block
             ISSABasicBlock body = getLoopSuccessor(branchBB);
@@ -2178,7 +2224,7 @@ public abstract class ToSource {
               // if it's ugly loop, put test as if-statement into body
 
               // retrieve else statement
-              Set<ISSABasicBlock> elseBlock = HashSetFactory.make(loopExits);
+              Set<ISSABasicBlock> elseBlock = HashSetFactory.make(loop.get().getLoopExits());
               elseBlock.retainAll(cc.keySet());
               List<CAstNode> elseNodes = null;
               if (elseBlock.size() > 0) {
@@ -2287,10 +2333,10 @@ public abstract class ToSource {
             // if notTakenBlock is selected (or have goto at the last?), add break
             // if takenBlock is null, add break
             // if takenBlock is not null, add break (or have goto at last?)
-            if (loopBreakers.contains(branchBB)
-                && !loopControls.containsKey(branchBB)
-                && !loopHeaders.contains(branchBB)) {
-              if (loopExits.contains(notTaken)) {
+            if (loop.isPresent()
+                && loop.get().getLoopBreakers().contains(branchBB)
+                && !loop.get().getLoopHeader().equals(branchBB)) {
+              if (loop.get().getLoopExits().contains(notTaken)) {
                 notTakenBlock.add(ast.makeNode(CAstNode.BREAK));
               } else {
                 if (takenBlock == null)
