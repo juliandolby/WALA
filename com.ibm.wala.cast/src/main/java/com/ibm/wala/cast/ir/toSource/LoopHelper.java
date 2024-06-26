@@ -9,6 +9,7 @@ import com.ibm.wala.ssa.SSAGotoInstruction;
 import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.ssa.SSAUnaryOpInstruction;
 import com.ibm.wala.util.collections.IteratorUtil;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -50,7 +51,21 @@ public class LoopHelper {
       }
 
       if (!notWhileLoop) {
-        return LoopType.WHILE;
+        // check loop exits
+        if (loop.getLoopExits().size() > 1) {
+          // if all loop exits normal successor are the same, it's while loop
+          List<ISSABasicBlock> nextBBs =
+              loop.getLoopExits().stream()
+                  .map(ex -> cfg.getNormalSuccessors(ex))
+                  .flatMap(Collection::stream)
+                  .distinct()
+                  .collect(Collectors.toList());
+          if (nextBBs.size() < 2) {
+            return LoopType.WHILE;
+          }
+        } else {
+          return LoopType.WHILE;
+        }
       }
     }
 
