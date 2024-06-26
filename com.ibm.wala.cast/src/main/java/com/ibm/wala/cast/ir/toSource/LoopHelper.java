@@ -195,4 +195,23 @@ public class LoopHelper {
             .anyMatch(control -> control.equals(cfg.getBlockForInstruction(inst.iIndex())))
         : false;
   }
+
+  /**
+   * In some cases operations on test can be merged, e.g. while loop In other cases these operations
+   * should be separated
+   *
+   * @return True if it's conditional branch of a while loop
+   */
+  public static boolean shouldMergeTest(
+      PrunedCFG<SSAInstruction, ISSABasicBlock> cfg,
+      SSAInstruction inst,
+      Map<ISSABasicBlock, Loop> loops) {
+    if ((inst instanceof SSAConditionalBranchInstruction)) {
+      Loop loop = getLoopByInstruction(cfg, inst, loops);
+      return loop != null
+          && loop.getLoopControl().equals(cfg.getBlockForInstruction(inst.iIndex()))
+          && LoopType.WHILE.equals(getLoopType(cfg, loop));
+    }
+    return false;
+  }
 }
