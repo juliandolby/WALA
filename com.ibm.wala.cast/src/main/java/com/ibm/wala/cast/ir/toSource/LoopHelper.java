@@ -164,7 +164,7 @@ public class LoopHelper {
 
   /**
    * Check if the given instruction is part of loop control
-   * 
+   *
    * @param cfg The control flow graph
    * @param inst The instruction to be used to check
    * @param loops All the loops that's in the control flow graph

@@ -926,7 +926,7 @@ public abstract class ToSource {
                                 .get());
 
                         assert (loops.containsKey(part.getLoopHeader()));
-                        loops.get(part.getLoopHeader()).addLoopPart(part);
+                        loops.get(part.getLoopHeader()).addLoopPart(part, cfg);
                       }
                     });
           });
