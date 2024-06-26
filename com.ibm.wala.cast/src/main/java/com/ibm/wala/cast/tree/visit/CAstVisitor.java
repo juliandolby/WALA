@@ -1077,6 +1077,7 @@ public abstract class CAstVisitor<C extends CAstVisitor.Context> {
         }
 
       case CAstNode.VAR:
+      case CAstNode.PRIMITIVE:
         {
           if (assign
               ? visitor.visitVarAssign(n, v, a, context, visitor)

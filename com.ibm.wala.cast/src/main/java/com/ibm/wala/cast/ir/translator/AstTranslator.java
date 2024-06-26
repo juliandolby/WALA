@@ -4714,7 +4714,7 @@ public abstract class AstTranslator extends CAstVisitor<AstTranslator.WalkContex
       CAstNode n, CAstNode v, CAstNode a, WalkContext c, CAstVisitor<WalkContext> visitor) {
     WalkContext context = c;
     int rval = c.getValue(v);
-    String nm = (String) n.getChild(0).getValue();
+    String nm = (String) n.getChild(n.getKind() == CAstNode.PRIMITIVE ? 1 : 0).getValue();
     Symbol ls = context.currentScope().lookup(nm);
     c.setValue(n, rval);
     assignValue(n, context, ls, nm, rval);
@@ -4741,7 +4741,7 @@ public abstract class AstTranslator extends CAstVisitor<AstTranslator.WalkContex
       WalkContext c,
       CAstVisitor<WalkContext> visitor) {
     WalkContext context = c;
-    String nm = (String) n.getChild(0).getValue();
+    String nm = (String) n.getChild(n.getKind() == CAstNode.PRIMITIVE ? 1 : 0).getValue();
     Symbol ls = context.currentScope().lookup(nm);
     TypeReference type = makeType(ls.type());
     int temp;
