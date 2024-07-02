@@ -5,6 +5,7 @@
 
 buildscript {
 	dependencies.classpath 'commons-io:commons-io:2.11.0'
+	dependencies.classpath 'org.jfrog.buildinfo:build-info-extractor-gradle:latest.release'
 	// lock all dependencies
 	configurations.classpath {
 		resolutionStrategy.activateDependencyLocking()
@@ -35,7 +36,7 @@ ext.isWindows = osName.startsWith('Windows ')
 //
 
 group name
-version VERSION_NAME
+version = "1.5.9-SNAPSHOT"
 
 // version of Eclipse JARs to use for Eclipse-integrated WALA components
 ext.eclipseVersion = '4.19.0'
@@ -56,6 +57,7 @@ subprojects { subproject ->
 	apply plugin: 'java-library'
 	apply plugin: 'java-test-fixtures'
 	apply plugin: 'maven-publish'
+	apply plugin: 'com.jfrog.artifactory'
 	apply plugin: 'signing'
 
 	java.sourceCompatibility = JavaVersion.VERSION_1_8
