@@ -76,6 +76,27 @@ final sharedPublicationConfiguration(publication) {
 	}
 }
 
+artifactory {
+    contextUrl = 'https://eu.artifactory.swg-devops.com/artifactory/'
+
+    publish {
+        repository {
+			if (isSnapshot) {
+				repoKey = 'zeus-ez-libs-snapshot-local'
+			} else { 
+				repoKey = 'zeus-ez-libs-release-local'
+			}
+            username = mavenUsername
+            password = mavenPassword
+        }
+
+        defaults {
+            publications('remote')
+            publishArtifacts = true
+        }
+    }
+}
+
 publishing {
 	publications {
 
