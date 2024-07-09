@@ -83,11 +83,17 @@ artifactory {
         repository {
 			if (isSnapshot) {
 				repoKey = 'zeus-ez-libs-snapshot-local'
-			} else { 
+			} else {
 				repoKey = 'zeus-ez-libs-release-local'
 			}
-            username = mavenUsername
-            password = mavenPassword
+            if (hasProperty("mavenUsername") && hasProperty("mavenPassword")) {
+                username = mavenUsername
+                password = mavenPassword
+            } else {
+                // Avoid error due to missing definition on local builds
+                username = "notarealusername"
+                password = "notarealpassword"
+            }
         }
 
         defaults {
