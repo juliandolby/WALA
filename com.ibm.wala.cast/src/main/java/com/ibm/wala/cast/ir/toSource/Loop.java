@@ -110,4 +110,15 @@ public class Loop {
     assert (parts.size() > 0);
     return loopExits;
   }
+
+  public boolean isLastBlockofPart(ISSABasicBlock block) {
+    assert (parts.size() > 0);
+    return parts.stream()
+        .anyMatch(
+            part ->
+                part.getAllBlocks().stream()
+                    .max(Comparator.comparing(ISSABasicBlock::getNumber))
+                    .get()
+                    .equals(block));
+  }
 }

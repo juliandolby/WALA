@@ -2188,6 +2188,26 @@ public abstract class ToSource {
               }
             }
 
+            // For the case where notTakenBlock or takenBlock is the last block of the loop part
+            // It will go back to loopHeader
+            // If it's ended with GOTO, GOTO should be deleted
+            // So that the spurious `continue` will not be generated
+            if (loop != null) {
+              if (loop.isLastBlockofPart(taken)) {
+                if (takenBlock != null
+                    && CAstNode.CONTINUE == takenBlock.get(takenBlock.size() - 1).getKind()) {
+                  System.err.println("spurious continue will be deleted from taken block");
+                  takenBlock.remove(takenBlock.size() - 1);
+                }
+              } else if (loop.isLastBlockofPart(notTaken)) {
+                if (notTakenBlock != null
+                    && CAstNode.CONTINUE == notTakenBlock.get(notTakenBlock.size() - 1).getKind()) {
+                  System.err.println("spurious continue will be deleted from not taken block");
+                  notTakenBlock.remove(notTakenBlock.size() - 1);
+                }
+              }
+            }
+
             CAstNode notTakenStmt =
                 notTakenBlock.size() == 1
                     ? notTakenBlock.iterator().next()
