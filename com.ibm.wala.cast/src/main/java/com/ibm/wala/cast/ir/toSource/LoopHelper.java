@@ -8,6 +8,7 @@ import com.ibm.wala.ssa.SSAConditionalBranchInstruction;
 import com.ibm.wala.ssa.SSAGotoInstruction;
 import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.ssa.SSAUnaryOpInstruction;
+import com.ibm.wala.ssa.SSAUnspecifiedExprInstruction;
 import com.ibm.wala.util.collections.IteratorUtil;
 import java.util.Collection;
 import java.util.Iterator;
@@ -44,6 +45,11 @@ public class LoopHelper {
           continue;
         }
         if (inst instanceof SSAConditionalBranchInstruction) {
+          continue;
+        }
+        // TODO: this is a temporary change especially this one
+        // to help identify if there are only instructions related with test
+        if (inst instanceof SSAUnspecifiedExprInstruction) {
           continue;
         }
         notWhileLoop = true;
