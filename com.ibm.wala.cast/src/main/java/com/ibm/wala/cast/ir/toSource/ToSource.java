@@ -1581,7 +1581,8 @@ public abstract class ToSource {
           Loop loop = LoopHelper.getLoopByInstruction(cfg, inst, loops);
           if (loop != null
               && loop.getLoopHeader().equals(cfg.getNormalSuccessors(bb).iterator().next())) {
-            node = ast.makeNode(CAstNode.CONTINUE);
+            // seems we dont need to generate CONTINUE
+            //node = ast.makeNode(CAstNode.CONTINUE);
           } else if (loop != null && loop.getLoopExits().containsAll(cfg.getNormalSuccessors(bb))) {
             node = ast.makeNode(CAstNode.BLOCK_STMT, ast.makeNode(CAstNode.BREAK));
           } else {
