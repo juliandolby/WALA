@@ -110,4 +110,18 @@ public class Loop {
     assert (parts.size() > 0);
     return loopExits;
   }
+
+  /**
+   * When there are more than one loop part, the last block will be the one for the loop instead of
+   * the loop part
+   *
+   * @return The last block of the loop
+   */
+  public boolean isLastBlock(ISSABasicBlock block) {
+    assert (parts.size() > 0);
+    return allBlocks.stream()
+        .max(Comparator.comparing(ISSABasicBlock::getNumber))
+        .get()
+        .equals(block);
+  }
 }
