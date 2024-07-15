@@ -1580,7 +1580,9 @@ public abstract class ToSource {
           ISSABasicBlock bb = cfg.getBlockForInstruction(inst.iIndex());
           Loop loop = LoopHelper.getLoopByInstruction(cfg, inst, loops);
           if (loop != null
-              && loop.getLoopHeader().equals(cfg.getNormalSuccessors(bb).iterator().next())) {
+              && loop.getLoopHeader().equals(cfg.getNormalSuccessors(bb).iterator().next())
+              && !loop.isLastBlock(bb)) {
+            // if there are more than one loop part, only last one should not generate CONTINUE
             node = ast.makeNode(CAstNode.CONTINUE);
           } else if (loop != null && loop.getLoopExits().containsAll(cfg.getNormalSuccessors(bb))) {
             node = ast.makeNode(CAstNode.BLOCK_STMT, ast.makeNode(CAstNode.BREAK));
