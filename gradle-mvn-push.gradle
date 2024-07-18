@@ -86,13 +86,10 @@ artifactory {
 			} else {
 				repoKey = 'zeus-ez-libs-release-local'
 			}
-            if (hasProperty("mavenUsername") && hasProperty("mavenPassword")) {
+			
+            if (project.hasProperty("mavenUsername") && project.hasProperty("mavenPassword")) {
                 username = mavenUsername
                 password = mavenPassword
-            } else {
-                // Avoid error due to missing definition on local builds
-                username = "notarealusername"
-                password = "notarealpassword"
             }
         }
 
