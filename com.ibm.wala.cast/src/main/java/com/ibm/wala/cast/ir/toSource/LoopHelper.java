@@ -22,11 +22,11 @@ import java.util.stream.Collectors;
 public class LoopHelper {
 
   private static boolean isForLoop(Loop loop) {
-    if (loop.getLoopHeader().equals(loop.getLoopControl())) {
+    if (loop.getLoopHeader().equals(loop.getLoopControl()) && loop.getLoopBreakers().size() < 2) {
       // A for-loop is targeting for PERFORM n TIMES for now
       // The loopHeader and loopControl are the same
       // The loopHeader should contains 3 or more than 3 instructions (based on current samples)
-      // The last 3 instructions in loopHeader should follow a rule on both type and relationship 
+      // The last 3 instructions in loopHeader should follow a rule on both type and relationship
       // And the second last instruction in loop body should be incremental
       List<SSAInstruction> headerInsts =
           IteratorUtil.streamify(loop.getLoopHeader().iterator()).collect(Collectors.toList());
@@ -189,9 +189,9 @@ public class LoopHelper {
   }
 
   /**
-   * Find out if the given chunk should be moved to translate with loop body 
-   * One case is the chunk is in the loop and before the conditional branch of the loop control 
-   * The other case is the last assignment in loop header/control before conditional
+   * Find out if the given chunk should be moved to translate with loop body One case is the chunk
+   * is in the loop and before the conditional branch of the loop control The other case is the last
+   * assignment in loop header/control before conditional
    *
    * @param cfg The control flow graph
    * @param chunk The instructions to be used to check
