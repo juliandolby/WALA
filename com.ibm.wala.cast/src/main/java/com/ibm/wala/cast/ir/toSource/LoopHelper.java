@@ -7,6 +7,7 @@ import com.ibm.wala.ssa.SSABinaryOpInstruction;
 import com.ibm.wala.ssa.SSAConditionalBranchInstruction;
 import com.ibm.wala.ssa.SSAGotoInstruction;
 import com.ibm.wala.ssa.SSAInstruction;
+import com.ibm.wala.ssa.SSAPhiInstruction;
 import com.ibm.wala.ssa.SSAUnaryOpInstruction;
 import com.ibm.wala.ssa.SSAUnspecifiedExprInstruction;
 import com.ibm.wala.util.collections.IteratorUtil;
@@ -20,20 +21,52 @@ import java.util.stream.Collectors;
 /** The helper class for some methods of loop */
 public class LoopHelper {
 
-  /**
-   * Determine loop type based on what's in the loop
-   *
-   * @param cfg The control flow graph
-   * @param loop The loop for type
-   * @return The loop type
-   */
-  public static LoopType getLoopType(PrunedCFG<SSAInstruction, ISSABasicBlock> cfg, Loop loop) {
-    // TODO: add unsupported loop type
+  private static boolean isForLoop(Loop loop) {
+    if (loop.getLoopHeader().equals(loop.getLoopControl()) && loop.getLoopBreakers().size() < 2) {
+      // A for-loop is targeting for PERFORM n TIMES for now
+      // The loopHeader and loopControl are the same
+      // The loopHeader should contains 3 or more than 3 instructions (based on current samples)
+      // The last 3 instructions in loopHeader should follow a rule on both type and relationship
+      // And the second last instruction in loop body should be incremental
+      List<SSAInstruction> headerInsts =
+          IteratorUtil.streamify(loop.getLoopHeader().iterator()).collect(Collectors.toList());
+
+      if (headerInsts.size() > 2
+          && headerInsts.get(headerInsts.size() - 3) instanceof SSAPhiInstruction
+          && headerInsts.get(headerInsts.size() - 2) instanceof SSABinaryOpInstruction
+          && headerInsts.get(headerInsts.size() - 1) instanceof SSAConditionalBranchInstruction) {
+        // The target of first Inst should be the val1 of the next one
+        int phiResult = ((SSAPhiInstruction) headerInsts.get(headerInsts.size() - 3)).getDef();
+        int opResult = ((SSABinaryOpInstruction) headerInsts.get(headerInsts.size() - 2)).getDef();
+
+        if (((SSABinaryOpInstruction) headerInsts.get(headerInsts.size() - 2)).getUse(0)
+                == phiResult
+            && ((SSAConditionalBranchInstruction) headerInsts.get(headerInsts.size() - 1)).getUse(0)
+                == opResult) {
+          List<SSAInstruction> lastInsts =
+              IteratorUtil.streamify(loop.getLastBlock().iterator()).collect(Collectors.toList());
+          if (lastInsts.size() > 1) {
+            SSAInstruction lastOp = lastInsts.get(lastInsts.size() - 2);
+            if (lastOp instanceof SSABinaryOpInstruction) {
+              return ((SSAPhiInstruction) headerInsts.get(headerInsts.size() - 3)).getUse(0)
+                  == ((SSABinaryOpInstruction) lastOp).getDef();
+            }
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  private static boolean isWhileLoop(PrunedCFG<SSAInstruction, ISSABasicBlock> cfg, Loop loop) {
     if (loop.getLoopHeader().equals(loop.getLoopControl())) {
       boolean notWhileLoop = false;
 
       // If loopHeader and loopControl are the same, check if there are any other instructions
       // before Conditional Branch, if no, it is a while loop
+      // For now it is simply check by instruction type
+      // It should be checking `result` of the current instruction should be val1 of the
+      // next instruction
       List<SSAInstruction> headerInsts =
           IteratorUtil.streamify(loop.getLoopHeader().iterator()).collect(Collectors.toList());
       for (SSAInstruction inst : headerInsts) {
@@ -66,15 +99,16 @@ public class LoopHelper {
                   .flatMap(Collection::stream)
                   .distinct()
                   .collect(Collectors.toList());
-          if (nextBBs.size() < 2) {
-            return LoopType.WHILE;
-          }
+          return nextBBs.size() < 2;
         } else {
-          return LoopType.WHILE;
+          return true;
         }
       }
     }
+    return false;
+  }
 
+  private static boolean isDoLoop(PrunedCFG<SSAInstruction, ISSABasicBlock> cfg, Loop loop) {
     // If loopControl successor is loopHeader then it's a do loop, no matter they are the same block
     // or different
     boolean doLoop = false;
@@ -99,9 +133,28 @@ public class LoopHelper {
         }
       }
     }
+    return doLoop;
+  }
 
-    // TODO: check unsupported loop types
-    if (doLoop) return LoopType.DOWHILE;
+  /**
+   * Determine loop type based on what's in the loop
+   *
+   * @param cfg The control flow graph
+   * @param loop The loop for type
+   * @return The loop type
+   */
+  public static LoopType getLoopType(PrunedCFG<SSAInstruction, ISSABasicBlock> cfg, Loop loop) {
+    if (loop.getLoopHeader().equals(loop.getLoopControl())) {
+      // check if it's for loop
+      // For now a for-loop refers PERFORM n TIMES
+      if (isForLoop(loop)) return LoopType.FOR;
+
+      // usually for loop will be detected as while loop too, so that check for-loop first
+      if (isWhileLoop(cfg, loop)) return LoopType.WHILE;
+    }
+
+    // TODO: check unsupported loop types or add a loop type of ugly loop
+    if (isDoLoop(cfg, loop)) return LoopType.DOWHILE;
     else return LoopType.WHILETRUE;
   }
 
@@ -136,8 +189,9 @@ public class LoopHelper {
   }
 
   /**
-   * Find out if the given chunk is in the loop and before the conditional branch of the loop
-   * control
+   * Find out if the given chunk should be moved to translate with loop body One case is the chunk
+   * is in the loop and before the conditional branch of the loop control The other case is the last
+   * assignment in loop header/control before conditional
    *
    * @param cfg The control flow graph
    * @param chunk The instructions to be used to check
@@ -145,7 +199,7 @@ public class LoopHelper {
    * @return True if the given chunk is in the loop and before the conditional branch of the loop
    *     control
    */
-  public static boolean beforeLoopControl(
+  public static boolean shouldMoveAsLoopBody(
       PrunedCFG<SSAInstruction, ISSABasicBlock> cfg,
       List<SSAInstruction> chunk,
       Map<ISSABasicBlock, Loop> loops) {
@@ -168,8 +222,21 @@ public class LoopHelper {
       // If the block is before loop control, return true
       return true;
     } else {
-      // if it is loop control, check if it is not conditional branch
-      return !isConditional(chunk) && !isAssignment(chunk);
+      // if it is loop control, conditional should be ignored
+      if (isConditional(chunk)) {
+        return false;
+      }
+      if (isAssignment(chunk)) {
+        // if it is loop control, assignment should be ignored
+        // except the last assignment for for-loop
+        if (LoopType.FOR.equals(getLoopType(cfg, loop))) {
+          List<SSAInstruction> controlInsts =
+              IteratorUtil.streamify(currentBB.iterator()).collect(Collectors.toList());
+          return chunk.contains(controlInsts.get(controlInsts.size() - 2));
+        }
+        return false;
+      }
+      return true;
     }
   }
 

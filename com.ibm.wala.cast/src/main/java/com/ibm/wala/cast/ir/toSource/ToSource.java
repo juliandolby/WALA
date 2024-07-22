@@ -1350,7 +1350,7 @@ public abstract class ToSource {
             // Ignore goto chunks as well as the chunks that's part of loop control but
             // should be translated as loop body
             if (!gotoChunk(chunkInsts)) {
-              if (!LoopHelper.beforeLoopControl(cfg, chunkInsts, loops)) {
+              if (!LoopHelper.shouldMoveAsLoopBody(cfg, chunkInsts, loops)) {
                 Pair<CAstNode, List<CAstNode>> stuff =
                     makeToCAst(chunkInsts).processChunk(decls, packages, false);
                 elts.add(stuff.fst);
@@ -1362,7 +1362,7 @@ public abstract class ToSource {
           .filter(this::gotoChunk)
           .forEach(
               c -> {
-                if (!LoopHelper.beforeLoopControl(cfg, c, loops)) {
+                if (!LoopHelper.shouldMoveAsLoopBody(cfg, c, loops)) {
                   Pair<CAstNode, List<CAstNode>> stuff =
                       makeToCAst(c).processChunk(decls, packages, false);
                   elts.add(stuff.fst);
@@ -2109,6 +2109,33 @@ public abstract class ToSource {
               }
 
               test = ast.makeConstant(true);
+            } else if (LoopType.FOR.equals(loopType)) {
+              assert (loopBlock.size() > 1);
+
+              List<CAstNode> forConditions = new LinkedList<>();
+              // Find out the assignment that should be moved into for() statement
+              if (loopBlockInLoopControl.size() > 0
+                  && CAstNode.EXPR_STMT == loopBlockInLoopControl.get(0).getKind()
+                  && loopBlockInLoopControl.get(0).getChildCount() == 1) {
+                forConditions.add(loopBlockInLoopControl.get(0).getChild(0));
+              } else {
+                forConditions.add(ast.makeNode(CAstNode.EMPTY));
+              }
+              // the test
+              forConditions.add(test);
+              // The incremental which originally second last of loop body
+              // It should not be EXPR_STMT to avoid indent and comma
+              CAstNode assignNode = loopBlock.remove(loopBlock.size() - 2);
+              if (CAstNode.EXPR_STMT == assignNode.getKind() && assignNode.getChildCount() == 1) {
+                assignNode = assignNode.getChild(0);
+              }
+              forConditions.add(assignNode);
+              // form a new test as block statement, this will help to tell it's a for loop
+              test = ast.makeNode(CAstNode.BLOCK_STMT, forConditions);
+
+              bodyNodes =
+                  ast.makeNode(
+                      CAstNode.BLOCK_STMT, loopBlock.toArray(new CAstNode[loopBlock.size()]));
             } else {
               // for normal while loop, use loopBlock
               bodyNodes =
@@ -2779,9 +2806,21 @@ public abstract class ToSource {
       ToJavaVisitor cv = makeToJavaVisitor(ir, out, indent + 1, varTypes);
       indent();
 
-      // If it's do while loop, then genarate do{}while();
-      // otherwise keep what's be done already, that's while(){};
-      if (n.getChildCount() > 2 && n.getChild(2).getValue().equals(java.lang.Boolean.TRUE)) {
+      assert (n.getChildCount() > 0);
+
+      if (CAstNode.BLOCK_STMT == n.getChild(0).getKind()) {
+        // If it's for loop, then generate for(;;){};
+        out.print("for (");
+        cv.visit(n.getChild(0).getChild(0), c, visitor);
+        out.print("; ");
+        cv.visit(n.getChild(0).getChild(1), c, visitor);
+        out.print("; ");
+        cv.visit(n.getChild(0).getChild(2), c, visitor);
+        out.println(")");
+        cv.visit(n.getChild(1), c, cv);
+        return true;
+      } else if (n.getChildCount() > 2 && n.getChild(2).getValue().equals(java.lang.Boolean.TRUE)) {
+        // If it's do loop, then generate do{}while();
         out.println("do ");
         cv.visit(n.getChild(1), c, cv);
         indent();
@@ -2790,6 +2829,7 @@ public abstract class ToSource {
         out.println(");");
         return true;
       } else {
+        // otherwise keep what's been done already, that's while(){};
         out.print("while (");
         cv.visit(n.getChild(0), c, visitor);
         out.println(")");

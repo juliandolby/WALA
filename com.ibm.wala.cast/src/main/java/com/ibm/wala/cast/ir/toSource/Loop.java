@@ -115,13 +115,21 @@ public class Loop {
    * When there are more than one loop part, the last block will be the one for the loop instead of
    * the loop part
    *
-   * @return The last block of the loop
+   * @return If the given block is the last block of the loop
    */
   public boolean isLastBlock(ISSABasicBlock block) {
     assert (parts.size() > 0);
-    return allBlocks.stream()
-        .max(Comparator.comparing(ISSABasicBlock::getNumber))
-        .get()
-        .equals(block);
+    return getLastBlock().equals(block);
+  }
+
+  /**
+   * When there are more than one loop part, the last block will be the one for the loop instead of
+   * the loop part
+   *
+   * @return The last block of the loop
+   */
+  public ISSABasicBlock getLastBlock() {
+    assert (parts.size() > 0);
+    return allBlocks.stream().max(Comparator.comparing(ISSABasicBlock::getNumber)).get();
   }
 }
