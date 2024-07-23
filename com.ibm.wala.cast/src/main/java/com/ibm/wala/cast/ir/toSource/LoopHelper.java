@@ -194,8 +194,7 @@ public class LoopHelper {
    * @param cfg The control flow graph
    * @param chunk The instructions to be used to check
    * @param loops All the loops that's in the control flow graph
-   * @return Loop The loop which the given chunk belongs to, or null
-   *     control
+   * @return Loop The loop which the given chunk belongs to, or null control
    */
   public static Loop findLoopByChunk(
       PrunedCFG<SSAInstruction, ISSABasicBlock> cfg,
@@ -219,8 +218,7 @@ public class LoopHelper {
    * @param chunk The instructions to be used to check
    * @param loops All the loops that's in the control flow graph
    * @param skipLoop The loops that should bypass
-   * @return Loop The loop which the given chunk belongs to, or null
-   *     control
+   * @return Loop The loop which the given chunk belongs to, or null control
    */
   public static Loop findLoopByChunk(
       PrunedCFG<SSAInstruction, ISSABasicBlock> cfg,
