@@ -189,9 +189,66 @@ public class LoopHelper {
   }
 
   /**
-   * Find out if the given chunk should be moved to translate with loop body One case is the chunk
-   * is in the loop and before the conditional branch of the loop control The other case is the last
-   * assignment in loop header/control before conditional
+   * Find out the loop that the given chunk belongs to
+   *
+   * @param cfg The control flow graph
+   * @param chunk The instructions to be used to check
+   * @param loops All the loops that's in the control flow graph
+   * @return Loop The loop which the given chunk belongs to, or null
+   *     control
+   */
+  public static Loop findLoopByChunk(
+      PrunedCFG<SSAInstruction, ISSABasicBlock> cfg,
+      List<SSAInstruction> chunk,
+      Map<ISSABasicBlock, Loop> loops) {
+    // Find out the first instruction in the chunk
+    Optional<SSAInstruction> first = chunk.stream().filter(inst -> inst.iIndex() > 0).findFirst();
+
+    if (!first.isPresent()) {
+      return null;
+    }
+
+    // Find out the loop
+    return getLoopByInstruction(cfg, first.get(), loops);
+  }
+
+  /**
+   * Find out the loop that the given chunk belongs to and not the loop that's provided
+   *
+   * @param cfg The control flow graph
+   * @param chunk The instructions to be used to check
+   * @param loops All the loops that's in the control flow graph
+   * @param skipLoop The loops that should bypass
+   * @return Loop The loop which the given chunk belongs to, or null
+   *     control
+   */
+  public static Loop findLoopByChunk(
+      PrunedCFG<SSAInstruction, ISSABasicBlock> cfg,
+      List<SSAInstruction> chunk,
+      Map<ISSABasicBlock, Loop> loops,
+      List<Loop> skipLoop) {
+    // Find out the first instruction in the chunk
+    Optional<SSAInstruction> first = chunk.stream().filter(inst -> inst.iIndex() > 0).findFirst();
+
+    if (!first.isPresent()) {
+      return null;
+    }
+
+    // Find out the loop
+    Optional<Loop> result =
+        loops.values().stream()
+            .filter(
+                loop ->
+                    !skipLoop.contains(loop)
+                        && loop.getAllBlocks()
+                            .contains(cfg.getBlockForInstruction(first.get().iIndex())))
+            .findFirst();
+    return result.isPresent() ? result.get() : null;
+  }
+
+  /**
+   * Find out if the given chunk is in the loop and before the conditional branch of the loop
+   * control
    *
    * @param cfg The control flow graph
    * @param chunk The instructions to be used to check
@@ -199,7 +256,7 @@ public class LoopHelper {
    * @return True if the given chunk is in the loop and before the conditional branch of the loop
    *     control
    */
-  public static boolean shouldMoveAsLoopBody(
+  public static boolean beforeLoopControl(
       PrunedCFG<SSAInstruction, ISSABasicBlock> cfg,
       List<SSAInstruction> chunk,
       Map<ISSABasicBlock, Loop> loops) {
@@ -266,6 +323,32 @@ public class LoopHelper {
         ? loops.values().stream()
             .map(loop -> loop.getLoopControl())
             .anyMatch(control -> control.equals(cfg.getBlockForInstruction(inst.iIndex())))
+        : false;
+  }
+
+  /**
+   * Check if the given instruction is part of loop header
+   *
+   * @param cfg The control flow graph
+   * @param chunk The instruction chunk to be used to check
+   * @param loops All the loops that's in the control flow graph
+   * @return True if the given instruction is part of loop header
+   */
+  public static boolean isLoopHeader(
+      PrunedCFG<SSAInstruction, ISSABasicBlock> cfg,
+      List<SSAInstruction> chunk,
+      Map<ISSABasicBlock, Loop> loops) {
+    // Find out the first instruction in the chunk
+    Optional<SSAInstruction> first = chunk.stream().filter(inst -> inst.iIndex() > 0).findFirst();
+
+    if (!first.isPresent()) {
+      return false;
+    }
+
+    return first.get().iIndex() > 0
+        ? loops.values().stream()
+            .map(loop -> loop.getLoopHeader())
+            .anyMatch(header -> header.equals(cfg.getBlockForInstruction(first.get().iIndex())))
         : false;
   }
 
