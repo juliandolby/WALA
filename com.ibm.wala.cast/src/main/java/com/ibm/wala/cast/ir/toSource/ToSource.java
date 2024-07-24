@@ -1347,8 +1347,7 @@ public abstract class ToSource {
       List<List<SSAInstruction>> loopChunks = new LinkedList<>();
       chunks.forEach(
           chunkInsts -> {
-            // Ignore goto chunks as well as the chunks that's part of loop control but
-            // should be translated as loop body
+            // Ignore goto chunks for now
             if (!gotoChunk(chunkInsts)) {
               // TODO: TDV: for nested loop the whole process should be treat still as one loop from
               // the root node
@@ -1375,22 +1374,30 @@ public abstract class ToSource {
               }
             }
           });
+
+      // there's a case loopChunks are the last few chunks in the list, then parse it
+      // TODO: merge duplicate code
+      if (loopChunks.size() > 0) {
+        // create loop
+        LinkedList<Loop> currentLoops = new LinkedList<>();
+        currentLoops.add(LoopHelper.findLoopByChunk(cfg, loopChunks.get(0), loops));
+        Pair<CAstNode, List<CAstNode>> stuff =
+            toLoopCAst(loopChunks, decls, currentLoops, new LinkedList<>());
+        // stuff.fst will be the block statement added to organize all loop nodes
+        elts.addAll(stuff.fst.getChildren());
+        decls.addAll(stuff.snd);
+        loopChunks.clear();
+      }
+
+      // translate gotos
       chunks.stream()
           .filter(this::gotoChunk)
           .forEach(
               c -> {
-                //                if (!LoopHelper.beforeLoopControl(cfg, c, loops)) {
                 Pair<CAstNode, List<CAstNode>> stuff =
                     makeToCAst(c).processChunk(decls, packages, false);
                 elts.add(stuff.fst);
                 decls.addAll(stuff.snd);
-                //                } else {
-                //                  Loop loop = LoopHelper.findLoopByChunk(cfg, c, loops);
-                //                  if (loop != null) {
-                //                    loopsAst.get(loop.getLoopHeader()).snd.put(c,
-                // RegionTreeNode.this);
-                //                  }
-                //                }
               });
       decls.addAll(elts);
       return ast.makeNode(CAstNode.BLOCK_STMT, decls.toArray(new CAstNode[decls.size()]));
@@ -1431,6 +1438,19 @@ public abstract class ToSource {
               }
             }
           });
+
+      // there's a case loopChunks are the last few chunks in the list, then parse it
+      // TODO: merge duplicate code
+      if (loopChunks.size() > 0) {
+        // create loop
+        currentLoops.add(LoopHelper.findLoopByChunk(cfg, loopChunks.get(0), loops));
+        // TODO: check if it works to pass in elts for nested loop
+        Pair<CAstNode, List<CAstNode>> stuff = toLoopCAst(loopChunks, decls, currentLoops, elts);
+        elts.add(stuff.fst);
+        decls.addAll(stuff.snd);
+        loopChunks.clear();
+      }
+
       chunks.stream()
           .filter(this::gotoChunk)
           .forEach(
@@ -2123,7 +2143,7 @@ public abstract class ToSource {
             // Chunks in loop body
             List<List<SSAInstruction>> loopChunks = regionChunks.get(Pair.make(instruction, body));
             RegionTreeNode lr = cc.get(body);
-            List<CAstNode> loopBlock = handleBlock(loopChunks, lr, false);
+            List<CAstNode> loopBlock = handleBlock(loopChunks, lr, loop);
 
             System.err.println("loop test insts: " + testInsts);
             Optional<Stream<ISSABasicBlock>> blocks =
@@ -2194,7 +2214,7 @@ public abstract class ToSource {
                 RegionTreeNode rt = cc.get(loopControlElse);
                 List<List<SSAInstruction>> elseChunks =
                     regionChunks.get(Pair.make(instruction, loopControlElse));
-                elseNodes = handleBlock(elseChunks, rt, false);
+                elseNodes = handleBlock(elseChunks, rt, loop);
                 elseNodes.add(ast.makeNode(CAstNode.BREAK));
               }
 
@@ -2281,7 +2301,7 @@ public abstract class ToSource {
                 List<List<SSAInstruction>> afterChunks =
                     regionChunks.get(Pair.make(instruction, after));
                 RegionTreeNode ar = cc.get(after);
-                List<CAstNode> afterBlock = handleBlock(afterChunks, ar, false);
+                List<CAstNode> afterBlock = handleBlock(afterChunks, ar, loop);
 
                 node =
                     ast.makeNode(
@@ -2302,7 +2322,7 @@ public abstract class ToSource {
               List<List<SSAInstruction>> takenChunks =
                   regionChunks.get(Pair.make(instruction, taken));
               RegionTreeNode tr = cc.get(taken);
-              takenBlock = handleBlock(takenChunks, tr, false);
+              takenBlock = handleBlock(takenChunks, tr, loop);
 
             } else {
               assert cc.size() == 1;
@@ -2314,7 +2334,7 @@ public abstract class ToSource {
                 Pair.make(instruction, notTaken);
             List<List<SSAInstruction>> notTakenChunks = regionChunks.get(notTakenKey);
             RegionTreeNode fr = cc.get(notTaken);
-            List<CAstNode> notTakenBlock = handleBlock(notTakenChunks, fr, false);
+            List<CAstNode> notTakenBlock = handleBlock(notTakenChunks, fr, loop);
 
             // For the case where there's a need to jump out of the loop, break should be added
             // if notTakenBlock is selected (or have goto at the last?), add break
@@ -2363,21 +2383,15 @@ public abstract class ToSource {
         }
 
         private List<CAstNode> handleBlock(
-            List<List<SSAInstruction>> loopChunks, RegionTreeNode lr, boolean extraHeaderCode) {
+            List<List<SSAInstruction>> loopChunks, RegionTreeNode lr, Loop loop) {
 
           List<Pair<CAstNode, List<CAstNode>>> normalStuff =
               handleInsts(
-                  loopChunks,
-                  lr,
-                  x -> !(x.iterator().next() instanceof SSAGotoInstruction),
-                  extraHeaderCode);
+                  loopChunks, lr, x -> !(x.iterator().next() instanceof SSAGotoInstruction), loop);
 
           List<Pair<CAstNode, List<CAstNode>>> gotoStuff =
               handleInsts(
-                  loopChunks,
-                  lr,
-                  x -> x.iterator().next() instanceof SSAGotoInstruction,
-                  extraHeaderCode);
+                  loopChunks, lr, x -> x.iterator().next() instanceof SSAGotoInstruction, loop);
 
           List<CAstNode> block = new LinkedList<>();
           normalStuff.forEach(p -> block.addAll(p.snd));
@@ -2392,13 +2406,21 @@ public abstract class ToSource {
             List<List<SSAInstruction>> loopChunks,
             RegionTreeNode lr,
             Predicate<? super List<SSAInstruction>> assignFilter,
-            boolean extraHeaderCode) {
+            Loop loop) {
           if (loopChunks == null || loopChunks.isEmpty()) {
             return Collections.emptyList();
           } else {
             return IteratorUtil.streamify(loopChunks)
                 .filter(assignFilter)
-                .map(c -> lr.makeToCAst(c).processChunk(parentDecls, packages, extraHeaderCode))
+                .map(
+                    c -> {
+                      if (loop != null) {
+                        return lr.makeToCAst(c)
+                            .processChunk(parentDecls, packages, loop, new LinkedList<CAstNode>());
+                      } else {
+                        return lr.makeToCAst(c).processChunk(parentDecls, packages, false);
+                      }
+                    })
                 .collect(Collectors.toList());
           }
         }
@@ -2418,7 +2440,7 @@ public abstract class ToSource {
             List<List<SSAInstruction>> labelChunks =
                 regionChunks.get(Pair.make(instruction, caseBlock));
             RegionTreeNode fr = cc.get(caseBlock);
-            List<CAstNode> labelBlock = handleBlock(labelChunks, fr, false);
+            List<CAstNode> labelBlock = handleBlock(labelChunks, fr, loop);
             switchCode.add(
                 ast.makeNode(
                     CAstNode.LABEL_STMT,
@@ -2432,7 +2454,7 @@ public abstract class ToSource {
           List<List<SSAInstruction>> defaultChunks =
               regionChunks.get(Pair.make(instruction, defaultBlock));
           RegionTreeNode fr = cc.get(defaultBlock);
-          List<CAstNode> defaultStuff = handleBlock(defaultChunks, fr, false);
+          List<CAstNode> defaultStuff = handleBlock(defaultChunks, fr, loop);
 
           node =
               ast.makeNode(
