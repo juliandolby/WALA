@@ -1358,14 +1358,7 @@ public abstract class ToSource {
               } else {
                 if (loopChunks.size() > 0) {
                   // create loop
-                  LinkedList<Loop> currentLoops = new LinkedList<>();
-                  currentLoops.add(LoopHelper.findLoopByChunk(cfg, loopChunks.get(0), loops));
-                  Pair<CAstNode, List<CAstNode>> stuff =
-                      toLoopCAst(loopChunks, decls, currentLoops, new LinkedList<>());
-                  // stuff.fst will be the block statement added to organize all loop nodes
-                  elts.addAll(stuff.fst.getChildren());
-                  decls.addAll(stuff.snd);
-                  loopChunks.clear();
+                  createLoop(cfg, loopChunks, new LinkedList<>(), decls, elts);
                 }
                 Pair<CAstNode, List<CAstNode>> stuff =
                     makeToCAst(chunkInsts).processChunk(decls, packages, false);
@@ -1376,17 +1369,9 @@ public abstract class ToSource {
           });
 
       // there's a case loopChunks are the last few chunks in the list, then parse it
-      // TODO: merge duplicate code
       if (loopChunks.size() > 0) {
         // create loop
-        LinkedList<Loop> currentLoops = new LinkedList<>();
-        currentLoops.add(LoopHelper.findLoopByChunk(cfg, loopChunks.get(0), loops));
-        Pair<CAstNode, List<CAstNode>> stuff =
-            toLoopCAst(loopChunks, decls, currentLoops, new LinkedList<>());
-        // stuff.fst will be the block statement added to organize all loop nodes
-        elts.addAll(stuff.fst.getChildren());
-        decls.addAll(stuff.snd);
-        loopChunks.clear();
+        createLoop(cfg, loopChunks, new LinkedList<>(), decls, elts);
       }
 
       // translate gotos
@@ -1421,13 +1406,7 @@ public abstract class ToSource {
               } else {
                 if (loopChunks.size() > 0) {
                   // create loop
-                  currentLoops.add(loop);
-                  // TODO: check if it works to pass in elts for nested loop
-                  Pair<CAstNode, List<CAstNode>> stuff =
-                      toLoopCAst(loopChunks, decls, currentLoops, elts);
-                  elts.add(stuff.fst);
-                  decls.addAll(stuff.snd);
-                  loopChunks.clear();
+                  createLoop(cfg, loopChunks, currentLoops, decls, elts);
                 }
                 Pair<CAstNode, List<CAstNode>> stuff =
                     makeToCAst(chunkInsts)
@@ -1440,15 +1419,8 @@ public abstract class ToSource {
           });
 
       // there's a case loopChunks are the last few chunks in the list, then parse it
-      // TODO: merge duplicate code
       if (loopChunks.size() > 0) {
-        // create loop
-        currentLoops.add(LoopHelper.findLoopByChunk(cfg, loopChunks.get(0), loops));
-        // TODO: check if it works to pass in elts for nested loop
-        Pair<CAstNode, List<CAstNode>> stuff = toLoopCAst(loopChunks, decls, currentLoops, elts);
-        elts.add(stuff.fst);
-        decls.addAll(stuff.snd);
-        loopChunks.clear();
+        createLoop(cfg, loopChunks, currentLoops, decls, elts);
       }
 
       chunks.stream()
@@ -1462,6 +1434,21 @@ public abstract class ToSource {
               });
       return Pair.make(
           ast.makeNode(CAstNode.BLOCK_STMT, elts.toArray(new CAstNode[elts.size()])), decls);
+    }
+
+    private void createLoop(
+        PrunedCFG<SSAInstruction, ISSABasicBlock> cfg,
+        List<List<SSAInstruction>> loopChunks,
+        List<Loop> parentLoops,
+        List<CAstNode> decls,
+        List<CAstNode> elts) {
+      // create loop
+      parentLoops.add(LoopHelper.findLoopByChunk(cfg, loopChunks.get(0), loops, parentLoops));
+
+      Pair<CAstNode, List<CAstNode>> stuff =
+          toLoopCAst(loopChunks, decls, parentLoops, new LinkedList<>());
+      elts.addAll(stuff.fst.getChildren());
+      loopChunks.clear();
     }
 
     protected ToCAst makeToCAst(List<SSAInstruction> insts) {
