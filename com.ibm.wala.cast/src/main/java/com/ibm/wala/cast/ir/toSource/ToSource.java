@@ -1351,8 +1351,7 @@ public abstract class ToSource {
             if (!gotoChunk(chunkInsts)) {
               // TODO: TDV: for nested loop the whole process should be treat still as one loop from
               // the root node
-              Loop loop = LoopHelper.findLoopByChunk(cfg, chunkInsts, loops);
-              if (loop != null) {
+              if (LoopHelper.shouldMoveAsLoopBody(cfg, chunkInsts, loops, null)) {
                 // move to loop chunks
                 loopChunks.add(chunkInsts);
               } else {
@@ -1399,8 +1398,7 @@ public abstract class ToSource {
       chunks.forEach(
           chunkInsts -> {
             if (!gotoChunk(chunkInsts)) {
-              Loop loop = LoopHelper.findLoopByChunk(cfg, chunkInsts, loops, currentLoops);
-              if (loop != null) {
+              if (LoopHelper.shouldMoveAsLoopBody(cfg, chunkInsts, loops, currentLoops)) {
                 // move to loop chunks
                 loopChunks.add(chunkInsts);
               } else {
@@ -2202,7 +2200,23 @@ public abstract class ToSource {
                 List<List<SSAInstruction>> elseChunks =
                     regionChunks.get(Pair.make(instruction, loopControlElse));
                 elseNodes = handleBlock(elseChunks, rt, loop);
-                elseNodes.add(ast.makeNode(CAstNode.BREAK));
+                //                elseNodes.add(ast.makeNode(CAstNode.BREAK)); //TODO: lisa need to
+                // debug why sometimes it's two breaks
+                if (elseNodes.size() > 0) {
+                  if (elseNodes.get(elseNodes.size() - 1).getKind() == CAstNode.BLOCK_STMT
+                      && elseNodes.get(elseNodes.size() - 1).getChild(0).getKind()
+                          == CAstNode.BREAK) {
+                    System.out.println(
+                        "=====lisa, elseNodes is end with break, no need to add break");
+                  } else {
+                    System.out.println(
+                        "=====lisa, elseNodes is having nodes and not end with break, need to add break");
+                    elseNodes.add(ast.makeNode(CAstNode.BREAK));
+                  }
+                } else {
+                  System.out.println("=====lisa, elseNodes is empty, add break");
+                  elseNodes.add(ast.makeNode(CAstNode.BREAK));
+                }
               }
 
               CAstNode ifStmt =
