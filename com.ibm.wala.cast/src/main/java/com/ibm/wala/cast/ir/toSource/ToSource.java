@@ -2341,15 +2341,43 @@ public abstract class ToSource {
             // if notTakenBlock is selected (or have goto at the last?), add break
             // if takenBlock is null, add break
             // if takenBlock is not null, add break (or have goto at last?)
+            //            if (loop != null
+            //                && loop.getLoopBreakers().contains(branchBB)
+            //                && !loop.getLoopHeader().equals(branchBB)) {
+            //              if (loop.getLoopExits().contains(notTaken)) {
+            //                notTakenBlock.add(ast.makeNode(CAstNode.BREAK));
+            //              } else {
+            //                if (takenBlock == null)
+            //                  takenBlock =
+            // Collections.singletonList(ast.makeNode(CAstNode.BREAK));
+            //                else takenBlock.add(ast.makeNode(CAstNode.BREAK));
+            //              }
+            //            }//TODO: lisa need to
+            // debug why sometimes it's two breaks, looks like a break is added into a block
+
             if (loop != null
                 && loop.getLoopBreakers().contains(branchBB)
                 && !loop.getLoopHeader().equals(branchBB)) {
               if (loop.getLoopExits().contains(notTaken)) {
+                System.out.println("=====lisa, keep original logic to add break to notTakenBlock");
                 notTakenBlock.add(ast.makeNode(CAstNode.BREAK));
               } else {
                 if (takenBlock == null)
                   takenBlock = Collections.singletonList(ast.makeNode(CAstNode.BREAK));
-                else takenBlock.add(ast.makeNode(CAstNode.BREAK));
+                else {
+                  //                  takenBlock.add(ast.makeNode(CAstNode.BREAK)); this is the line
+                  // cause duplicate break
+                  if (takenBlock.get(takenBlock.size() - 1).getKind() == CAstNode.BLOCK_STMT
+                      && takenBlock.get(takenBlock.size() - 1).getChild(0).getKind()
+                          == CAstNode.BREAK) {
+                    System.out.println(
+                        "=====lisa, takenBlock is end with break, no need to add break");
+                  } else {
+                    System.out.println(
+                        "=====lisa, takenBlock is having nodes and not end with break, need to add break");
+                    takenBlock.add(ast.makeNode(CAstNode.BREAK));
+                  }
+                }
               }
             }
 
