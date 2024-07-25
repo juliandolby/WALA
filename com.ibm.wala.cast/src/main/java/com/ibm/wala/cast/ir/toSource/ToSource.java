@@ -1392,7 +1392,6 @@ public abstract class ToSource {
         List<CAstNode> decls,
         List<Loop> currentLoops,
         List<CAstNode> elts) {
-      CAst ast = new CAstImpl();
 
       List<List<SSAInstruction>> loopChunks = new LinkedList<>();
       chunks.forEach(
@@ -2200,23 +2199,21 @@ public abstract class ToSource {
                 List<List<SSAInstruction>> elseChunks =
                     regionChunks.get(Pair.make(instruction, loopControlElse));
                 elseNodes = handleBlock(elseChunks, rt, loop);
-                //                elseNodes.add(ast.makeNode(CAstNode.BREAK)); //TODO: lisa need to
-                // debug why sometimes it's two breaks
+
                 if (elseNodes.size() > 0) {
                   if (elseNodes.get(elseNodes.size() - 1).getKind() == CAstNode.BLOCK_STMT
                       && elseNodes.get(elseNodes.size() - 1).getChild(0).getKind()
                           == CAstNode.BREAK) {
                     System.out.println(
-                        "=====lisa, elseNodes is end with break, no need to add break");
+                        "elseNodes is end with break, no need to add break"); // TODO: need it for a
+                                                                              // while to see when
+                                                                              // to add break
                   } else {
                     System.out.println(
-                        "=====lisa, elseNodes is having nodes and not end with break, need to add break");
+                        "elseNodes is having nodes and not end with break, need to add break"); // TODO: need it for a while to see when to add break
                     elseNodes.add(ast.makeNode(CAstNode.BREAK));
                   }
-                } else {
-                  System.out.println("=====lisa, elseNodes is empty, add break");
-                  elseNodes.add(ast.makeNode(CAstNode.BREAK));
-                }
+                } else elseNodes.add(ast.makeNode(CAstNode.BREAK));
               }
 
               CAstNode ifStmt =
@@ -2337,44 +2334,29 @@ public abstract class ToSource {
             RegionTreeNode fr = cc.get(notTaken);
             List<CAstNode> notTakenBlock = handleBlock(notTakenChunks, fr, loop);
 
-            // For the case where there's a need to jump out of the loop, break should be added
-            // if notTakenBlock is selected (or have goto at the last?), add break
-            // if takenBlock is null, add break
-            // if takenBlock is not null, add break (or have goto at last?)
-            //            if (loop != null
-            //                && loop.getLoopBreakers().contains(branchBB)
-            //                && !loop.getLoopHeader().equals(branchBB)) {
-            //              if (loop.getLoopExits().contains(notTaken)) {
-            //                notTakenBlock.add(ast.makeNode(CAstNode.BREAK));
-            //              } else {
-            //                if (takenBlock == null)
-            //                  takenBlock =
-            // Collections.singletonList(ast.makeNode(CAstNode.BREAK));
-            //                else takenBlock.add(ast.makeNode(CAstNode.BREAK));
-            //              }
-            //            }//TODO: lisa need to
-            // debug why sometimes it's two breaks, looks like a break is added into a block
-
             if (loop != null
                 && loop.getLoopBreakers().contains(branchBB)
                 && !loop.getLoopHeader().equals(branchBB)) {
               if (loop.getLoopExits().contains(notTaken)) {
-                System.out.println("=====lisa, keep original logic to add break to notTakenBlock");
+                System.out.println(
+                    "keep original logic to add break to notTakenBlock"); // TODO: need it for a
+                                                                          // while to see when to
+                                                                          // add break
                 notTakenBlock.add(ast.makeNode(CAstNode.BREAK));
               } else {
                 if (takenBlock == null)
                   takenBlock = Collections.singletonList(ast.makeNode(CAstNode.BREAK));
                 else {
-                  //                  takenBlock.add(ast.makeNode(CAstNode.BREAK)); this is the line
-                  // cause duplicate break
                   if (takenBlock.get(takenBlock.size() - 1).getKind() == CAstNode.BLOCK_STMT
                       && takenBlock.get(takenBlock.size() - 1).getChild(0).getKind()
                           == CAstNode.BREAK) {
                     System.out.println(
-                        "=====lisa, takenBlock is end with break, no need to add break");
+                        " takenBlock is end with break, no need to add break"); // TODO: need it for
+                                                                                // a while to see
+                                                                                // when to add break
                   } else {
                     System.out.println(
-                        "=====lisa, takenBlock is having nodes and not end with break, need to add break");
+                        "takenBlock is having nodes and not end with break, need to add break"); // TODO: need it for a while to see when to add break
                     takenBlock.add(ast.makeNode(CAstNode.BREAK));
                   }
                 }
