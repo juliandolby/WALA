@@ -1426,7 +1426,7 @@ public abstract class ToSource {
             SSAInstruction useNode = du.getDef(defNode.getUse(i));
             if (useNode instanceof SSAPhiInstruction) {
               // an assignment is needed
-              if (test.getChildCount() > 2) {
+              if (test.getChildCount() > 2 && CAstNode.BINARY_EXPR == test.getChild(1).getKind()) {
                 test =
                     ast.makeNode(
                         CAstNode.BINARY_EXPR,
