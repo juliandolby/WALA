@@ -1426,16 +1426,17 @@ public abstract class ToSource {
             SSAInstruction useNode = du.getDef(defNode.getUse(i));
             if (useNode instanceof SSAPhiInstruction) {
               // an assignment is needed
-              assert (test.getChildCount() > 2);
-              test =
-                  ast.makeNode(
-                      CAstNode.BINARY_EXPR,
-                      test.getChild(0),
-                      ast.makeNode(
-                          CAstNode.BLOCK_EXPR,
-                          ast.makeNode(
-                              CAstNode.ASSIGN, test.getChild(1).getChild(2), test.getChild(1))),
-                      test.getChild(2));
+              if (test.getChildCount() > 2) {
+                test =
+                    ast.makeNode(
+                        CAstNode.BINARY_EXPR,
+                        test.getChild(0),
+                        ast.makeNode(
+                            CAstNode.BLOCK_EXPR,
+                            ast.makeNode(
+                                CAstNode.ASSIGN, test.getChild(1).getChild(2), test.getChild(1))),
+                        test.getChild(2));
+              }
             }
           }
         }
