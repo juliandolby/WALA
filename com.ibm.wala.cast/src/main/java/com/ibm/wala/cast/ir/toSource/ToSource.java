@@ -1421,19 +1421,22 @@ public abstract class ToSource {
         if (CAstNode.DECL_STMT == test.getKind()) {
           test = test.getChild(test.getChildCount() - 1);
 
-          // There are some cases (e.g. PERFORM_PARA_WHILELOOP) that the test structure has to be visited
-          // in this way, can't find a better solution
-          if (test.getChildCount() == 3 && CAstNode.BINARY_EXPR == test.getChild(1).getKind()) {
-            ast.makeNode(
-                CAstNode.BINARY_EXPR,
-                test.getChild(0),
-                ast.makeNode(
-                    CAstNode.BLOCK_EXPR,
-                    ast.makeNode(
-                        CAstNode.ASSIGN,
-                        ast.makeNode(CAstNode.VAR, test.getChild(1).getChild(2)),
-                        test.getChild(1))),
-                test.getChild(2));
+          SSAInstruction defNode = du.getDef(condChunk.get(condChunk.size() - 1).getDef());
+          for (int i = 0; i < defNode.getNumberOfUses(); i++) {
+            SSAInstruction useNode = du.getDef(defNode.getUse(i));
+            if (useNode instanceof SSAPhiInstruction) {
+              // an assignment is needed
+              assert (test.getChildCount() > 2);
+              test =
+                  ast.makeNode(
+                      CAstNode.BINARY_EXPR,
+                      test.getChild(0),
+                      ast.makeNode(
+                          CAstNode.BLOCK_EXPR,
+                          ast.makeNode(
+                              CAstNode.ASSIGN, test.getChild(1).getChild(2), test.getChild(1))),
+                      test.getChild(2));
+            }
           }
         }
       } else {
