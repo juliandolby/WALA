@@ -113,7 +113,6 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.Stack;
 import java.util.function.BiFunction;
@@ -123,7 +122,6 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import org.apache.commons.io.output.TeeWriter;
 
 public abstract class ToSource {
@@ -1321,10 +1319,6 @@ public abstract class ToSource {
      * == 1 && insts.iterator().next() instanceof SSAPhiInstruction; }
      */
 
-    private boolean gotoChunk(List<SSAInstruction> insts) {
-      return insts.size() == 1 && insts.iterator().next() instanceof SSAGotoInstruction;
-    }
-
     boolean controlOrderedInChunk(SSAInstruction l, SSAInstruction r, List<SSAInstruction> chunk) {
       return !(deemedFunctional(l, chunk, cha) && deemedFunctional(r, chunk, cha))
           && l.iIndex() < r.iIndex();
@@ -1338,7 +1332,7 @@ public abstract class ToSource {
      * l.iIndex() < r.iIndex(); } } } } return false; }
      */
 
-    public CAstNode toCAst() {
+    public CAstNode toCAst(Loop currentLoop) {
       CAst ast = new CAstImpl();
       List<CAstNode> elts = new LinkedList<>();
       List<CAstNode> decls = new LinkedList<>();
@@ -1348,9 +1342,7 @@ public abstract class ToSource {
       chunks.forEach(
           chunkInsts -> {
             // Ignore goto chunks for now
-            if (!gotoChunk(chunkInsts)) {
-              // TODO: TDV: for nested loop the whole process should be treat still as one loop from
-              // the root node
+            if (!LoopHelper.gotoChunk(chunkInsts)) {
               if (LoopHelper.shouldMoveAsLoopBody(cfg, chunkInsts, loops, null)) {
                 // move to loop chunks
                 loopChunks.add(chunkInsts);
@@ -1360,7 +1352,7 @@ public abstract class ToSource {
                   createLoop(cfg, loopChunks, new LinkedList<>(), decls, elts);
                 }
                 Pair<CAstNode, List<CAstNode>> stuff =
-                    makeToCAst(chunkInsts).processChunk(decls, packages, false);
+                    makeToCAst(chunkInsts).processChunk(decls, packages, currentLoop);
                 elts.add(stuff.fst);
                 decls.addAll(stuff.snd);
               }
@@ -1375,11 +1367,11 @@ public abstract class ToSource {
 
       // translate gotos
       chunks.stream()
-          .filter(this::gotoChunk)
+          .filter(cs -> LoopHelper.gotoChunk(cs))
           .forEach(
               c -> {
                 Pair<CAstNode, List<CAstNode>> stuff =
-                    makeToCAst(c).processChunk(decls, packages, false);
+                    makeToCAst(c).processChunk(decls, packages, currentLoop);
                 elts.add(stuff.fst);
                 decls.addAll(stuff.snd);
               });
@@ -1390,47 +1382,280 @@ public abstract class ToSource {
     public Pair<CAstNode, List<CAstNode>> toLoopCAst(
         List<List<SSAInstruction>> chunks,
         List<CAstNode> decls,
-        List<Loop> currentLoops,
+        List<Loop> parentLoops,
         List<CAstNode> elts) {
+      assert (parentLoops != null && parentLoops.size() > 0);
 
-      List<List<SSAInstruction>> loopChunks = new LinkedList<>();
-      chunks.forEach(
-          chunkInsts -> {
-            if (!gotoChunk(chunkInsts)) {
-              if (LoopHelper.shouldMoveAsLoopBody(cfg, chunkInsts, loops, currentLoops)) {
-                // move to loop chunks
-                loopChunks.add(chunkInsts);
-              } else {
-                if (loopChunks.size() > 0) {
-                  // create loop
-                  createLoop(cfg, loopChunks, currentLoops, decls, elts);
-                }
-                Pair<CAstNode, List<CAstNode>> stuff =
-                    makeToCAst(chunkInsts)
-                        .processChunk(
-                            decls, packages, currentLoops.get(currentLoops.size() - 1), elts);
-                elts.add(stuff.fst);
-                decls.addAll(stuff.snd);
-              }
-            }
-          });
+      Loop currentLoop = parentLoops.get(parentLoops.size() - 1);
 
-      // there's a case loopChunks are the last few chunks in the list, then parse it
-      if (loopChunks.size() > 0) {
-        createLoop(cfg, loopChunks, currentLoops, decls, elts);
-      }
+      // usually loop control is the last chunk passed in from the caller
+      assert (chunks != null && chunks.size() > 0);
+      List<SSAInstruction> condChunk = chunks.remove(chunks.size() - 1);
+      assert (LoopHelper.isConditional(condChunk));
 
+      // translate everything before conditional, they should be part of loop body
       chunks.stream()
-          .filter(this::gotoChunk)
           .forEach(
               c -> {
                 Pair<CAstNode, List<CAstNode>> stuff =
-                    makeToCAst(c).processChunk(decls, packages, false);
+                    makeToCAst(c).processChunk(decls, packages, currentLoop);
                 elts.add(stuff.fst);
                 decls.addAll(stuff.snd);
               });
-      return Pair.make(
-          ast.makeNode(CAstNode.BLOCK_STMT, elts.toArray(new CAstNode[elts.size()])), decls);
+
+      // TODO: this is based on the assumption that the first conditional will be the loop control
+      assert (LoopHelper.isLoopControl(cfg, condChunk, currentLoop));
+
+      LoopType loopType = LoopHelper.getLoopType(cfg, currentLoop);
+
+      SSAInstruction instruction =
+          condChunk.stream()
+              .filter(inst -> (inst instanceof SSAConditionalBranchInstruction))
+              .findFirst()
+              .get();
+      condChunk.remove(instruction);
+
+      CAstNode test;
+      if (condChunk.size() > 0) {
+        test = makeToCAst(condChunk).processChunk(decls, packages, currentLoop).fst;
+        if (CAstNode.DECL_STMT == test.getKind()) {
+          test = test.getChild(test.getChildCount() - 1);
+
+          SSAInstruction defNode = du.getDef(condChunk.get(condChunk.size() - 1).getDef());
+          for (int i = 0; i < defNode.getNumberOfUses(); i++) {
+            SSAInstruction useNode = du.getDef(defNode.getUse(i));
+            if (useNode instanceof SSAPhiInstruction) {
+              // an assignment is needed
+              if (test.getChildCount() > 2 && CAstNode.BINARY_EXPR == test.getChild(1).getKind()) {
+                test =
+                    ast.makeNode(
+                        CAstNode.BINARY_EXPR,
+                        test.getChild(0),
+                        ast.makeNode(
+                            CAstNode.BLOCK_EXPR,
+                            ast.makeNode(
+                                CAstNode.ASSIGN, test.getChild(1).getChild(2), test.getChild(1))),
+                        test.getChild(2));
+              }
+            }
+          }
+        }
+      } else {
+        test = ast.makeConstant(true);
+      }
+
+      ISSABasicBlock body =
+          LoopHelper.getLoopSuccessor(cfg, currentLoop.getLoopControl(), currentLoop);
+
+      // For the 'after' block that should be moved into loop
+      ISSABasicBlock loopControlElse = null;
+
+      // If successor is not the next block
+      if (body.getNumber() != (currentLoop.getLoopControl().getNumber() + 1)) {
+        // reverse loop condition
+        test = ast.makeNode(CAstNode.UNARY_EXPR, CAstOperator.OP_NOT, test);
+      }
+
+      List<CAstNode> loopBodyNodes = new LinkedList<>();
+      CAstNode bodyNode = null;
+      if (elts != null && elts.size() > 0) {
+        // pass all nodes into loop body
+        loopBodyNodes.addAll(elts);
+        elts.clear();
+      }
+
+      // translate loop body after conditional
+      RegionTreeNode lr = children.get(instruction).get(body);
+      CAstNode condSuccessor = lr.toCAst(currentLoop);
+
+      if (LoopType.DOWHILE.equals(loopType)) {
+        // if it's do while loop, use loopBlock and loopBlockInLoopControl
+        loopBodyNodes.addAll(condSuccessor.getChildren());
+        bodyNode =
+            ast.makeNode(
+                CAstNode.BLOCK_STMT, loopBodyNodes.toArray(new CAstNode[loopBodyNodes.size()]));
+      } else if (LoopType.WHILETRUE.equals(loopType)) {
+        // if it's flexible loop, put test as if-statement into body
+        // retrieve else statement
+        Set<ISSABasicBlock> elseBlock = HashSetFactory.make(currentLoop.getLoopExits());
+        elseBlock.retainAll(children.get(instruction).keySet());
+        List<CAstNode> elseNodes = new LinkedList<>();
+
+        if (elseBlock.size() > 0) {
+          loopControlElse = elseBlock.iterator().next();
+        }
+        if (loopControlElse != null) {
+          RegionTreeNode rt = children.get(instruction).get(loopControlElse);
+          elseNodes.addAll(rt.toCAst(currentLoop).getChildren());
+
+          if (elseNodes.size() > 0) {
+            if (elseNodes.get(elseNodes.size() - 1).getKind() == CAstNode.BLOCK_STMT
+                && elseNodes.get(elseNodes.size() - 1).getChild(0).getKind() == CAstNode.BREAK) {
+              System.out.println(
+                  "elseNodes is end with break, no need to add break"); // TODO: need it for a
+              // while to see when
+              // to add break
+            } else {
+              System.out.println(
+                  "elseNodes is having nodes and not end with break, need to add break"); // TODO:
+              // need it
+              // for a
+              // while
+              // to see
+              // when to
+              // add
+              // break
+              elseNodes.add(ast.makeNode(CAstNode.BREAK));
+            }
+          } else elseNodes.add(ast.makeNode(CAstNode.BREAK));
+        }
+
+        CAstNode ifStmt =
+            CAstHelper.makeIfStmt(
+                ast.makeNode(CAstNode.UNARY_EXPR, CAstOperator.OP_NOT, test),
+                // include the nodes in the else branch
+                elseNodes.size() < 1
+                    ? ast.makeNode(CAstNode.BREAK)
+                    : (elseNodes.size() == 1
+                        ? elseNodes.get(0)
+                        : ast.makeNode(
+                            CAstNode.BLOCK_STMT,
+                            elseNodes.toArray(new CAstNode[elseNodes.size()]))),
+                // it should be a block instead of array of AST nodes
+                condSuccessor);
+        if (loopBodyNodes.size() == 0) {
+          bodyNode = ast.makeNode(CAstNode.BLOCK_STMT, ifStmt);
+        } else {
+          loopBodyNodes.add(ifStmt);
+          bodyNode =
+              ast.makeNode(
+                  CAstNode.BLOCK_STMT, loopBodyNodes.toArray(new CAstNode[loopBodyNodes.size()]));
+        }
+
+        test = ast.makeConstant(true);
+      } else if (LoopType.FOR.equals(loopType)) {
+        assert (condSuccessor.getChildCount() > 1);
+
+        List<CAstNode> forConditions = new LinkedList<>();
+        // Find out the assignment that should be moved into for() statement
+        if (loopBodyNodes.size() > 0
+            && CAstNode.EXPR_STMT == loopBodyNodes.get(0).getKind()
+            && loopBodyNodes.get(0).getChildCount() == 1) {
+          forConditions.add(loopBodyNodes.remove(0).getChild(0));
+        } else {
+          forConditions.add(ast.makeNode(CAstNode.EMPTY));
+        }
+        // the test
+        forConditions.add(test);
+        // The incremental which originally second last of loop body
+        // It should not be EXPR_STMT to avoid indent and comma
+        loopBodyNodes.addAll(condSuccessor.getChildren());
+        CAstNode assignNode = loopBodyNodes.remove(loopBodyNodes.size() - 2);
+        if (CAstNode.EXPR_STMT == assignNode.getKind() && assignNode.getChildCount() == 1) {
+          assignNode = assignNode.getChild(0);
+        }
+        forConditions.add(assignNode);
+        // form a new test as block statement, this will help to tell it's a for loop
+        test = ast.makeNode(CAstNode.BLOCK_STMT, forConditions);
+
+        bodyNode =
+            ast.makeNode(
+                CAstNode.BLOCK_STMT, loopBodyNodes.toArray(new CAstNode[loopBodyNodes.size()]));
+      } else {
+        // for normal while loop, use loopBlock
+        bodyNode =
+            ast.makeNode(
+                CAstNode.BLOCK_STMT,
+                condSuccessor.getChildren().toArray(new CAstNode[condSuccessor.getChildCount()]));
+      }
+
+      CAstNode loopNode =
+          ast.makeNode(
+              CAstNode.LOOP,
+              CAstHelper.stableRemoveLeadingNegation(ast, test),
+              bodyNode,
+              // reuse LOOP type but add third child as a boolean to tell if it's a do while
+              // loop
+              ast.makeConstant(LoopType.DOWHILE.equals(loopType)));
+
+      ISSABasicBlock next =
+          cfg.getBlockForInstruction(((SSAConditionalBranchInstruction) instruction).getTarget());
+      loopNode = checkLinePhi(loopNode, instruction, next, decls);
+
+      if (children.get(instruction).size() > 1) {
+        HashMap<ISSABasicBlock, RegionTreeNode> copy =
+            HashMapFactory.make(children.get(instruction));
+        assert copy.remove(body) != null;
+        ISSABasicBlock after = copy.keySet().iterator().next();
+        assert after != null;
+
+        // skip the case when 'after' block is moved into loop body
+        if (!after.equals(loopControlElse)) {
+          RegionTreeNode ar = children.get(instruction).get(after);
+          CAstNode afterNode = ar.toCAst(currentLoop);
+
+          loopNode = ast.makeNode(CAstNode.BLOCK_STMT, loopNode, afterNode);
+        }
+      } else {
+        // still need to wrap into a block
+        loopNode = ast.makeNode(CAstNode.BLOCK_STMT, loopNode);
+      }
+
+      chunks.stream()
+          .filter(cs -> LoopHelper.gotoChunk(cs))
+          .forEach(
+              c -> {
+                Pair<CAstNode, List<CAstNode>> stuff =
+                    makeToCAst(c).processChunk(decls, packages, currentLoop);
+                elts.add(stuff.fst);
+                decls.addAll(stuff.snd);
+              });
+      return Pair.make(loopNode, decls);
+    }
+
+    private CAstNode checkLinePhi(
+        CAstNode block, SSAInstruction branch, ISSABasicBlock target, List<CAstNode> parentDecls) {
+      CAst ast = new CAstImpl();
+      Pair<SSAInstruction, ISSABasicBlock> key = Pair.make(branch, target);
+      System.err.println(
+          "checking for line phi for instruction "
+              + branch
+              + " and target "
+              + target
+              + "in "
+              + linePhis);
+      if (linePhis.containsKey(key)) {
+        List<SSAInstruction> insts = linePhis.get(key);
+        List<CAstNode> lp = handlePhiAssignments(insts, parentDecls);
+        if (block != null) {
+          lp.add(block);
+        }
+        return ast.makeNode(CAstNode.BLOCK_STMT, lp.toArray(new CAstNode[lp.size()]));
+      } else {
+        return block;
+      }
+    }
+
+    private List<CAstNode> handlePhiAssignments(
+        List<SSAInstruction> insts, List<CAstNode> parentDecls) {
+      List<CAstNode> lp = new LinkedList<>();
+      for (SSAInstruction inst : insts) {
+        assert inst instanceof AssignInstruction;
+        ToCAst.Visitor v =
+            makeToCAst(insts)
+                .makeVisitor(
+                    inst,
+                    new CodeGenerationContext(types, mergePhis, false),
+                    Collections.singletonList(inst),
+                    parentDecls,
+                    packages,
+                    false);
+        lp.add(
+            ast.makeNode(
+                CAstNode.EXPR_STMT,
+                ast.makeNode(CAstNode.ASSIGN, v.visit(inst.getDef()), v.visit(inst.getUse(0)))));
+      }
+      return lp;
     }
 
     private void createLoop(
@@ -1459,7 +1684,7 @@ public abstract class ToSource {
       }
       chunks.forEach(
           insts -> {
-            if (!gotoChunk(insts)) {
+            if (!LoopHelper.gotoChunk(insts)) {
               insts
                   .iterator()
                   .forEachRemaining(
@@ -1483,7 +1708,7 @@ public abstract class ToSource {
             }
           });
       chunks.stream()
-          .filter(this::gotoChunk)
+          .filter(cs -> LoopHelper.gotoChunk(cs))
           .forEach(
               c -> {
                 indent(text, level + 1);
@@ -1516,28 +1741,11 @@ public abstract class ToSource {
         private final List<CAstNode> decls = new LinkedList<>();
         private final Map<String, Set<String>> packages;
         private Loop loop = null;
-        private List<CAstNode> elts = null;
 
         private void logHistory(SSAInstruction inst) {
           if (history != null && !history.isEmpty()) {
             history.peek().add(inst);
           }
-        }
-
-        private void startLog() {
-          if (history == null) {
-            history = new Stack<>();
-          }
-          history.push(HashSetFactory.make());
-        }
-
-        private Set<SSAInstruction> endLog() {
-          assert history != null && !history.isEmpty();
-          Set<SSAInstruction> h = history.pop();
-          if (!history.isEmpty()) {
-            history.peek().addAll(h);
-          }
-          return h;
         }
 
         public Visitor(
@@ -1594,10 +1802,8 @@ public abstract class ToSource {
             List<CAstNode> parentDecls,
             Map<String, Set<String>> parentPackages,
             Map<SSAInstruction, Map<ISSABasicBlock, RegionTreeNode>> children,
-            Loop loop,
-            List<CAstNode> elts) {
+            Loop loop) {
           this.loop = loop;
-          this.elts = elts;
           this.root = root;
           this.chunk = chunk;
           this.children = children;
@@ -1938,19 +2144,6 @@ public abstract class ToSource {
           return lp;
         }
 
-        // Find out the successor of the loop control block
-        // It might be the next block, it might not
-        private ISSABasicBlock getLoopSuccessor(ISSABasicBlock controlBB) {
-          ISSABasicBlock loopBB = null;
-          for (ISSABasicBlock nextBB : cfg.getNormalSuccessors(controlBB)) {
-            if (DFS.getReachableNodes(cfg, Collections.singleton(nextBB)).contains(controlBB)) {
-              assert loopBB == null;
-              loopBB = nextBB;
-            }
-          }
-          return loopBB;
-        }
-
         private CAstNode getInitialTestNode(
             SSAConditionalBranchInstruction instruction,
             CAstNode v2,
@@ -2004,84 +2197,6 @@ public abstract class ToSource {
           return test;
         }
 
-        private CAstNode makeIfStmt(CAstNode test, CAstNode thenBranch) {
-          return ast.makeNode(CAstNode.IF_STMT, stableRemoveLeadingNegation(test), thenBranch);
-        }
-
-        /**
-         * Remove redundant negation from test node.
-         *
-         * <ul>
-         *   <li>Even or zero negation count: all negation can be removed.
-         *   <li>Odd count: remove negation and flip branches.
-         * </ul>
-         *
-         * @param test The test node for the if-stmt to be created. May contain leading negation.
-         * @param thenBranch The 'true' branch of the if-stmt. May be flipped with the else branch
-         *     if negation count is odd.
-         * @param elseBranch The 'false' branch of the if-stmt. May be flipped with the then branch
-         *     if negation count is odd.
-         * @return A CAstNode of type IF_STMT equivalent to (if test thenBranch elseBranch), with
-         *     leading negation removed from test and possible then/else branches swapped.
-         */
-        private CAstNode makeIfStmt(CAstNode test, CAstNode thenBranch, CAstNode elseBranch) {
-          Pair<Integer, CAstNode> countAndTest = countAndRemoveLeadingNegation(test);
-          if (countAndTest.fst % 2 == 0) {
-            return ast.makeNode(CAstNode.IF_STMT, countAndTest.snd, thenBranch, elseBranch);
-          } else {
-            return ast.makeNode(CAstNode.IF_STMT, countAndTest.snd, elseBranch, thenBranch);
-          }
-        }
-
-        /**
-         * Counts leading negation and removes it from the input node. Then returns a pair with this
-         * information.
-         *
-         * @param n The input node.
-         * @return A pair with first element count, and second element n, but with all leading
-         *     negation removed.
-         */
-        private Pair<Integer, CAstNode> countAndRemoveLeadingNegation(CAstNode n) {
-          int count = 0;
-          CAstNode tmp = n;
-          while (isLeadingNegation(tmp)) {
-            count++;
-            tmp = removeSingleNegation(tmp);
-          }
-          return Pair.make(count, tmp);
-        }
-
-        private CAstNode removeSingleNegation(CAstNode n) {
-          assert (isLeadingNegation(n)) : "Expected node with leading negation " + n;
-          return n.getChild(1);
-        }
-
-        private boolean isLeadingNegation(CAstNode n) {
-          return n.getKind() == CAstNode.UNARY_EXPR
-              && n.getChildCount() > 1
-              && n.getChild(0) == CAstOperator.OP_NOT;
-        }
-
-        /**
-         * Remove redundant negation from test node.
-         *
-         * <ul>
-         *   <li>Even or zero negation count: all negation can be removed.
-         *   <li>Odd count: remove negation and flip branches.
-         * </ul>
-         *
-         * @param pred The node from which negation should be removed.
-         * @return The input node, with pairs of leading negation removed.
-         */
-        private CAstNode stableRemoveLeadingNegation(CAstNode pred) {
-          Pair<Integer, CAstNode> countAndPred = countAndRemoveLeadingNegation(pred);
-          if (countAndPred.fst % 2 == 0) {
-            return countAndPred.snd;
-          } else /* odd negation count (at least one) */ {
-            return ast.makeNode(CAstNode.UNARY_EXPR, CAstOperator.OP_NOT, countAndPred.snd);
-          }
-        }
-
         @Override
         public void visitConditionalBranch(SSAConditionalBranchInstruction instruction) {
           assert children.containsKey(instruction) : "children of " + instruction + ":" + children;
@@ -2089,307 +2204,91 @@ public abstract class ToSource {
           SSACFG.BasicBlock branchBB =
               (BasicBlock) cfg.getBlockForInstruction(instruction.iIndex());
 
-          Set<SSAInstruction> testInsts;
-          startLog();
           CAstNode v1 = visit(instruction.getUse(0));
           CAstNode v2 = visit(instruction.getUse(1));
-          testInsts = endLog();
 
           CAstNode test = getInitialTestNode(instruction, v2, v1, branchBB);
 
-          if (loop != null && loop.getLoopControl().equals(branchBB)) {
-            assert cc.size() <= 2;
+          List<CAstNode> takenBlock = null;
 
-            LoopType loopType = LoopHelper.getLoopType(cfg, loop);
+          ISSABasicBlock notTaken;
+          ISSABasicBlock taken = cfg.getBlockForInstruction(instruction.getTarget());
+          if (cc.containsKey(taken)) {
+            HashMap<ISSABasicBlock, RegionTreeNode> copy = HashMapFactory.make(cc);
+            assert copy.remove(taken) != null;
+            notTaken = copy.keySet().iterator().next();
+            List<List<SSAInstruction>> takenChunks =
+                regionChunks.get(Pair.make(instruction, taken));
+            RegionTreeNode tr = cc.get(taken);
+            takenBlock = handleBlock(takenChunks, tr, loop);
 
-            // Find out the successor of the loop control block
-            ISSABasicBlock body = getLoopSuccessor(branchBB);
-
-            // For the 'after' block that should be moved into loop
-            ISSABasicBlock loopControlElse = null;
-
-            ISSABasicBlock nextBB = cfg.getBlockForInstruction(instruction.iIndex() + 1);
-            // If successor is not the next block
-            if (!nextBB.equals(body)) {
-              // reverse loop condition
-              test = ast.makeNode(CAstNode.UNARY_EXPR, CAstOperator.OP_NOT, test);
-            }
-
-            // add the chucks that should be part of loop body
-            // they are ignored when translating CAst
-            List<CAstNode> loopBlockInLoopControl = new LinkedList<>();
-            if (elts != null && elts.size() > 0) {
-              // pass all nodes into loop body
-              loopBlockInLoopControl.addAll(elts);
-              elts.clear();
-            }
-
-            // Chunks in loop body
-            List<List<SSAInstruction>> loopChunks = regionChunks.get(Pair.make(instruction, body));
-            RegionTreeNode lr = cc.get(body);
-            List<CAstNode> loopBlock = handleBlock(loopChunks, lr, loop);
-
-            System.err.println("loop test insts: " + testInsts);
-            Optional<Stream<ISSABasicBlock>> blocks =
-                IteratorUtil.streamify(
-                        cdg.getPredNodes(cfg.getBlockForInstruction(instruction.iIndex())))
-                    .filter(b -> b != cfg.getBlockForInstruction(instruction.iIndex()))
-                    .map(pb -> IteratorUtil.streamify(cdg.getSuccNodes(pb)))
-                    .reduce((a, b) -> Stream.concat(a, b));
-            assert blocks.isPresent();
-            Optional<Stream<SSAInstruction>> insts =
-                blocks
-                    .get()
-                    .map(eb -> IteratorUtil.streamify(eb.iterator()))
-                    .reduce((a, b) -> Stream.concat(a, b));
-            assert insts.isPresent();
-            List<SSAInstruction> depInsts = insts.get().collect(Collectors.toList());
-            System.err.println("dep insts: " + depInsts);
-
-            List<SSAInstruction> header =
-                depInsts.stream()
-                    .filter(
-                        i ->
-                            cdg.hasEdge(
-                                    cfg.getBlockForInstruction(instruction.iIndex()),
-                                    cfg.getBlockForInstruction(i.iIndex()))
-                                && i != instruction
-                                && !testInsts.contains(i))
-                    .collect(Collectors.toList());
-
-            System.err.println("loop header insts: " + header);
-
-            // Remove this piece of code for now because it's generating useless code for some cases
-            // e.g. var_22 = System.out.
-            // The code was trying to handle the case of instructions in control header but not part
-            // of
-            // conditional branch, but it can not work well, so that another solution is implemented
-            // instead
-            //            if (!header.isEmpty()) {
-            //              List<CAstNode> hb = handleBlock(Collections.singletonList(header), lr,
-            // true);
-            //              System.err.println(decls);
-            //              System.err.println(parentDecls);
-            //              System.err.println(hb);
-            //              hb.addAll(loopBlock);
-            //              loopBlock = hb;
-            //            }
-
-            // Generate loop body per loop type
-            CAstNode bodyNodes = null;
-            if (LoopType.DOWHILE.equals(loopType)) {
-              // if it's do while loop, use loopBlock and loopBlockInLoopControl
-              loopBlockInLoopControl.addAll(loopBlock);
-              bodyNodes =
-                  ast.makeNode(
-                      CAstNode.BLOCK_STMT,
-                      loopBlockInLoopControl.toArray(new CAstNode[loopBlockInLoopControl.size()]));
-            } else if (LoopType.WHILETRUE.equals(loopType)) {
-              // if it's ugly loop, put test as if-statement into body
-
-              // retrieve else statement
-              Set<ISSABasicBlock> elseBlock = HashSetFactory.make(loop.getLoopExits());
-              elseBlock.retainAll(cc.keySet());
-              List<CAstNode> elseNodes = null;
-              if (elseBlock.size() > 0) {
-                loopControlElse = elseBlock.iterator().next();
-              }
-              if (loopControlElse != null) {
-                RegionTreeNode rt = cc.get(loopControlElse);
-                List<List<SSAInstruction>> elseChunks =
-                    regionChunks.get(Pair.make(instruction, loopControlElse));
-                elseNodes = handleBlock(elseChunks, rt, loop);
-
-                if (elseNodes.size() > 0) {
-                  if (elseNodes.get(elseNodes.size() - 1).getKind() == CAstNode.BLOCK_STMT
-                      && elseNodes.get(elseNodes.size() - 1).getChild(0).getKind()
-                          == CAstNode.BREAK) {
-                    System.out.println(
-                        "elseNodes is end with break, no need to add break"); // TODO: need it for a
-                                                                              // while to see when
-                                                                              // to add break
-                  } else {
-                    System.out.println(
-                        "elseNodes is having nodes and not end with break, need to add break"); // TODO: need it for a while to see when to add break
-                    elseNodes.add(ast.makeNode(CAstNode.BREAK));
-                  }
-                } else elseNodes.add(ast.makeNode(CAstNode.BREAK));
-              }
-
-              CAstNode ifStmt =
-                  makeIfStmt(
-                      ast.makeNode(CAstNode.UNARY_EXPR, CAstOperator.OP_NOT, test),
-                      // include the nodes in the else branch
-                      elseNodes == null
-                          ? ast.makeNode(CAstNode.BREAK)
-                          : (elseNodes.size() == 1
-                              ? elseNodes.get(0)
-                              : ast.makeNode(
-                                  CAstNode.BLOCK_STMT,
-                                  elseNodes.toArray(new CAstNode[elseNodes.size()]))),
-                      // it should be a block instead of array of AST nodes
-                      ast.makeNode(
-                          CAstNode.BLOCK_STMT, loopBlock.toArray(new CAstNode[loopBlock.size()])));
-              if (loopBlockInLoopControl.size() == 0) {
-                bodyNodes = ast.makeNode(CAstNode.BLOCK_STMT, ifStmt);
-              } else {
-                loopBlockInLoopControl.add(ifStmt);
-                bodyNodes =
-                    ast.makeNode(
-                        CAstNode.BLOCK_STMT,
-                        loopBlockInLoopControl.toArray(
-                            new CAstNode[loopBlockInLoopControl.size()]));
-              }
-
-              test = ast.makeConstant(true);
-            } else if (LoopType.FOR.equals(loopType)) {
-              assert (loopBlock.size() > 1);
-
-              List<CAstNode> forConditions = new LinkedList<>();
-              // Find out the assignment that should be moved into for() statement
-              if (loopBlockInLoopControl.size() > 0
-                  && CAstNode.EXPR_STMT == loopBlockInLoopControl.get(0).getKind()
-                  && loopBlockInLoopControl.get(0).getChildCount() == 1) {
-                forConditions.add(loopBlockInLoopControl.get(0).getChild(0));
-              } else {
-                forConditions.add(ast.makeNode(CAstNode.EMPTY));
-              }
-              // the test
-              forConditions.add(test);
-              // The incremental which originally second last of loop body
-              // It should not be EXPR_STMT to avoid indent and comma
-              CAstNode assignNode = loopBlock.remove(loopBlock.size() - 2);
-              if (CAstNode.EXPR_STMT == assignNode.getKind() && assignNode.getChildCount() == 1) {
-                assignNode = assignNode.getChild(0);
-              }
-              forConditions.add(assignNode);
-              // form a new test as block statement, this will help to tell it's a for loop
-              test = ast.makeNode(CAstNode.BLOCK_STMT, forConditions);
-
-              bodyNodes =
-                  ast.makeNode(
-                      CAstNode.BLOCK_STMT, loopBlock.toArray(new CAstNode[loopBlock.size()]));
-            } else {
-              // for normal while loop, use loopBlock
-              bodyNodes =
-                  ast.makeNode(
-                      CAstNode.BLOCK_STMT, loopBlock.toArray(new CAstNode[loopBlock.size()]));
-            }
-
-            node =
-                ast.makeNode(
-                    CAstNode.LOOP,
-                    stableRemoveLeadingNegation(test),
-                    bodyNodes,
-                    // reuse LOOP type but add third child as a boolean to tell if it's a do while
-                    // loop
-                    ast.makeConstant(LoopType.DOWHILE.equals(loopType)));
-
-            ISSABasicBlock next = cfg.getBlockForInstruction(instruction.getTarget());
-            node = checkLinePhi(node, instruction, next);
-
-            if (cc.size() > 1) {
-              HashMap<ISSABasicBlock, RegionTreeNode> copy = HashMapFactory.make(cc);
-              assert copy.remove(body) != null;
-              ISSABasicBlock after = copy.keySet().iterator().next();
-              assert after != null;
-
-              // skip the case when 'after' block is moved into loop body
-              if (!after.equals(loopControlElse)) {
-                List<List<SSAInstruction>> afterChunks =
-                    regionChunks.get(Pair.make(instruction, after));
-                RegionTreeNode ar = cc.get(after);
-                List<CAstNode> afterBlock = handleBlock(afterChunks, ar, loop);
-
-                node =
-                    ast.makeNode(
-                        CAstNode.BLOCK_STMT,
-                        node,
-                        afterBlock.toArray(new CAstNode[afterBlock.size()]));
-              }
-            }
           } else {
-            List<CAstNode> takenBlock = null;
+            assert cc.size() == 1;
+            notTaken = cc.keySet().iterator().next();
+          }
+          assert notTaken != null;
 
-            ISSABasicBlock notTaken;
-            ISSABasicBlock taken = cfg.getBlockForInstruction(instruction.getTarget());
-            if (cc.containsKey(taken)) {
-              HashMap<ISSABasicBlock, RegionTreeNode> copy = HashMapFactory.make(cc);
-              assert copy.remove(taken) != null;
-              notTaken = copy.keySet().iterator().next();
-              List<List<SSAInstruction>> takenChunks =
-                  regionChunks.get(Pair.make(instruction, taken));
-              RegionTreeNode tr = cc.get(taken);
-              takenBlock = handleBlock(takenChunks, tr, loop);
+          Pair<SSAConditionalBranchInstruction, ISSABasicBlock> notTakenKey =
+              Pair.make(instruction, notTaken);
+          List<List<SSAInstruction>> notTakenChunks = regionChunks.get(notTakenKey);
+          RegionTreeNode fr = cc.get(notTaken);
+          List<CAstNode> notTakenBlock = handleBlock(notTakenChunks, fr, loop);
 
+          if (loop != null
+              && loop.getLoopBreakers().contains(branchBB)
+              && !loop.getLoopHeader().equals(branchBB)) {
+            if (loop.getLoopExits().contains(notTaken)) {
+              System.out.println(
+                  "keep original logic to add break to notTakenBlock"); // TODO: need it for a
+              // while to see when to
+              // add break
+              notTakenBlock.add(ast.makeNode(CAstNode.BREAK));
             } else {
-              assert cc.size() == 1;
-              notTaken = cc.keySet().iterator().next();
-            }
-            assert notTaken != null;
-
-            Pair<SSAConditionalBranchInstruction, ISSABasicBlock> notTakenKey =
-                Pair.make(instruction, notTaken);
-            List<List<SSAInstruction>> notTakenChunks = regionChunks.get(notTakenKey);
-            RegionTreeNode fr = cc.get(notTaken);
-            List<CAstNode> notTakenBlock = handleBlock(notTakenChunks, fr, loop);
-
-            if (loop != null
-                && loop.getLoopBreakers().contains(branchBB)
-                && !loop.getLoopHeader().equals(branchBB)) {
-              if (loop.getLoopExits().contains(notTaken)) {
-                System.out.println(
-                    "keep original logic to add break to notTakenBlock"); // TODO: need it for a
-                                                                          // while to see when to
-                                                                          // add break
-                notTakenBlock.add(ast.makeNode(CAstNode.BREAK));
-              } else {
-                if (takenBlock == null)
-                  takenBlock = Collections.singletonList(ast.makeNode(CAstNode.BREAK));
-                else {
-                  if (takenBlock.get(takenBlock.size() - 1).getKind() == CAstNode.BLOCK_STMT
-                      && takenBlock.get(takenBlock.size() - 1).getChild(0).getKind()
-                          == CAstNode.BREAK) {
-                    System.out.println(
-                        " takenBlock is end with break, no need to add break"); // TODO: need it for
-                                                                                // a while to see
-                                                                                // when to add break
-                  } else {
-                    System.out.println(
-                        "takenBlock is having nodes and not end with break, need to add break"); // TODO: need it for a while to see when to add break
-                    takenBlock.add(ast.makeNode(CAstNode.BREAK));
-                  }
+              if (takenBlock == null)
+                takenBlock = Collections.singletonList(ast.makeNode(CAstNode.BREAK));
+              else {
+                if (takenBlock.get(takenBlock.size() - 1).getKind() == CAstNode.BLOCK_STMT
+                    && takenBlock.get(takenBlock.size() - 1).getChild(0).getKind()
+                        == CAstNode.BREAK) {
+                  System.out.println(
+                      " takenBlock is end with break, no need to add break"); // TODO: need it for
+                  // a while to see
+                  // when to add break
+                } else {
+                  System.out.println(
+                      "takenBlock is having nodes and not end with break, need to add break"); // TODO: need it for a while to see when to add break
+                  takenBlock.add(ast.makeNode(CAstNode.BREAK));
                 }
               }
             }
+          }
 
-            CAstNode notTakenStmt =
-                notTakenBlock.size() == 1
-                    ? notTakenBlock.iterator().next()
+          CAstNode notTakenStmt =
+              notTakenBlock.size() == 1
+                  ? notTakenBlock.iterator().next()
+                  : ast.makeNode(
+                      CAstNode.BLOCK_STMT,
+                      notTakenBlock.toArray(new CAstNode[notTakenBlock.size()]));
+
+          notTakenStmt = checkLinePhi(notTakenStmt, instruction, notTaken);
+
+          CAstNode takenStmt = null;
+          if (takenBlock != null) {
+            takenStmt =
+                takenBlock.size() == 1
+                    ? takenBlock.iterator().next()
                     : ast.makeNode(
-                        CAstNode.BLOCK_STMT,
-                        notTakenBlock.toArray(new CAstNode[notTakenBlock.size()]));
+                        CAstNode.BLOCK_STMT, takenBlock.toArray(new CAstNode[takenBlock.size()]));
+          }
 
-            notTakenStmt = checkLinePhi(notTakenStmt, instruction, notTaken);
+          takenStmt = checkLinePhi(takenStmt, instruction, taken);
 
-            CAstNode takenStmt = null;
-            if (takenBlock != null) {
-              takenStmt =
-                  takenBlock.size() == 1
-                      ? takenBlock.iterator().next()
-                      : ast.makeNode(
-                          CAstNode.BLOCK_STMT, takenBlock.toArray(new CAstNode[takenBlock.size()]));
-            }
-
-            takenStmt = checkLinePhi(takenStmt, instruction, taken);
-
-            if (takenStmt != null) {
-              node = makeIfStmt(test, takenStmt, notTakenStmt);
-            } else {
-              node =
-                  makeIfStmt(
-                      ast.makeNode(CAstNode.UNARY_EXPR, CAstOperator.OP_NOT, test), notTakenStmt);
-            }
+          if (takenStmt != null) {
+            node = CAstHelper.makeIfStmt(test, takenStmt, notTakenStmt);
+          } else {
+            node =
+                CAstHelper.makeIfStmt(
+                    ast.makeNode(CAstNode.UNARY_EXPR, CAstOperator.OP_NOT, test), notTakenStmt);
           }
         }
 
@@ -2425,12 +2324,7 @@ public abstract class ToSource {
                 .filter(assignFilter)
                 .map(
                     c -> {
-                      if (loop != null) {
-                        return lr.makeToCAst(c)
-                            .processChunk(parentDecls, packages, loop, new LinkedList<CAstNode>());
-                      } else {
-                        return lr.makeToCAst(c).processChunk(parentDecls, packages, false);
-                      }
+                      return lr.makeToCAst(c).processChunk(parentDecls, packages, loop);
                     })
                 .collect(Collectors.toList());
           }
@@ -2687,9 +2581,8 @@ public abstract class ToSource {
           List<SSAInstruction> chunk2,
           List<CAstNode> parentDecls,
           Map<String, Set<String>> packages,
-          Loop loop,
-          List<CAstNode> elts) {
-        return new Visitor(root, c, chunk2, parentDecls, packages, children, loop, elts);
+          Loop loop) {
+        return new Visitor(root, c, chunk2, parentDecls, packages, children, loop);
       }
 
       public ToCAst(List<SSAInstruction> insts, CodeGenerationContext c) {
@@ -2698,19 +2591,9 @@ public abstract class ToSource {
       }
 
       Pair<CAstNode, List<CAstNode>> processChunk(
-          List<CAstNode> parentDecls, Map<String, Set<String>> packages, boolean extraHeaderCode) {
+          List<CAstNode> parentDecls, Map<String, Set<String>> packages, Loop currentLoop) {
         SSAInstruction root = chunk.iterator().next();
-        Visitor x = makeVisitor(root, c, chunk, parentDecls, packages, extraHeaderCode);
-        return Pair.make(x.node, x.decls);
-      }
-
-      Pair<CAstNode, List<CAstNode>> processChunk(
-          List<CAstNode> parentDecls,
-          Map<String, Set<String>> packages,
-          Loop currentLoop,
-          List<CAstNode> elts) {
-        SSAInstruction root = chunk.iterator().next();
-        Visitor x = makeVisitor(root, c, chunk, parentDecls, packages, currentLoop, elts);
+        Visitor x = makeVisitor(root, c, chunk, parentDecls, packages, currentLoop);
         return Pair.make(x.node, x.decls);
       }
     }
@@ -3266,7 +3149,7 @@ public abstract class ToSource {
 
     System.err.println("tree");
     System.err.println(root);
-    CAstNode ast = root.toCAst();
+    CAstNode ast = root.toCAst(null);
     System.err.println(ast);
 
     Map<String, Object> varTypes = HashMapFactory.make();
