@@ -849,7 +849,8 @@ public abstract class ToSource {
 
                         LoopPart part = new LoopPart();
 
-                        Set<ISSABasicBlock> loopExits = HashSetFactory.make();
+                        Set<Pair<ISSABasicBlock, ISSABasicBlock>> loopBreakers =
+                            HashSetFactory.make();
 
                         Set<ISSABasicBlock> forward =
                             DFS.getReachableNodes(cfgNoBack, Collections.singleton(n));
@@ -867,14 +868,6 @@ public abstract class ToSource {
                                 .get());
 
                         System.err.println("loop: " + allBlocks);
-
-                        allBlocks.forEach(
-                            bb -> {
-                              IteratorUtil.streamify(cfg.getSuccNodes(bb))
-                                  .filter(b -> !allBlocks.contains(b))
-                                  .forEach(sb -> loopExits.add(sb));
-                            });
-                        part.setLoopExits(loopExits);
 
                         Set<ISSABasicBlock> breakers = HashSetFactory.make();
                         breakers.addAll(
@@ -912,7 +905,14 @@ public abstract class ToSource {
                                           - b.getFirstInstructionIndex();
                                     })
                                 .collect(Collectors.toSet()));
-                        part.setLoopBreakers(breakers);
+
+                        breakers.forEach(
+                            bb -> {
+                              IteratorUtil.streamify(cfg.getSuccNodes(bb))
+                                  .filter(b -> !allBlocks.contains(b))
+                                  .forEach(sb -> loopBreakers.add(Pair.make(bb, sb)));
+                            });
+                        part.setLoopBreakers(loopBreakers);
 
                         assert (breakers.size() > 0);
 
@@ -923,10 +923,28 @@ public abstract class ToSource {
                                 .get());
 
                         assert (loops.containsKey(part.getLoopHeader()));
-                        loops.get(part.getLoopHeader()).addLoopPart(part, cfg);
+                        loops.get(part.getLoopHeader()).addLoopPart(part);
                       }
                     });
           });
+
+      // figure out nested loops
+      // handle nested loop
+      loops
+          .values()
+          .forEach(
+              loop -> {
+                for (Loop parent : loops.values()) {
+
+                  // check if loop header belongs to a loop
+                  if (parent != loop
+                      && parent.getAllBlocks().contains(loop.getLoopHeader())
+                      && parent.getAllBlocks().containsAll(loop.getLoopBreakers())) {
+                    // this is nested loop
+                    parent.addLoopNested(loop);
+                  }
+                }
+              });
 
       System.err.println(
           "loop controls: "
@@ -1550,11 +1568,45 @@ public abstract class ToSource {
         // The incremental which originally second last of loop body
         // It should not be EXPR_STMT to avoid indent and comma
         loopBodyNodes.addAll(condSuccessor.getChildren());
-        CAstNode assignNode = loopBodyNodes.remove(loopBodyNodes.size() - 2);
-        if (CAstNode.EXPR_STMT == assignNode.getKind() && assignNode.getChildCount() == 1) {
-          assignNode = assignNode.getChild(0);
+
+        // Looking for
+        //        EXPR_STMT
+        //        ASSIGN
+        //          VAR
+        //            "tmp_37"
+        //          BINARY_EXPR
+        //            "+"
+        //            VAR
+        //              "tmp_37"
+        //            "1"
+        CAstNode assignNode = null;
+        if (test.getChildCount() > 1
+            && test.getChild(1).getChildCount() > 0
+            && test.getChild(1).getChild(0).getValue() != null) {
+          Object varName = test.getChild(1).getChild(0).getValue();
+          for (int i = loopBodyNodes.size() - 2; i >= 0; i--) {
+            if (CAstNode.EXPR_STMT == loopBodyNodes.get(i).getKind()
+                && loopBodyNodes.get(i).getChildCount() == 1
+                && CAstNode.ASSIGN == loopBodyNodes.get(i).getChild(0).getKind()
+                && loopBodyNodes.get(i).getChild(0).getChildCount() > 0
+                && CAstNode.VAR == loopBodyNodes.get(i).getChild(0).getChild(0).getKind()
+                && loopBodyNodes.get(i).getChild(0).getChild(0).getChildCount() > 0
+                && varName.equals(
+                    loopBodyNodes.get(i).getChild(0).getChild(0).getChild(0).getValue())) {
+              assignNode = loopBodyNodes.get(i);
+              break;
+            }
+          }
         }
-        forConditions.add(assignNode);
+
+        if (assignNode != null) {
+          loopBodyNodes.remove(assignNode);
+          assignNode = assignNode.getChild(0);
+          forConditions.add(assignNode);
+        } else {
+          forConditions.add(ast.makeNode(CAstNode.EMPTY));
+        }
+
         // form a new test as block statement, this will help to tell it's a for loop
         test = ast.makeNode(CAstNode.BLOCK_STMT, forConditions);
 
