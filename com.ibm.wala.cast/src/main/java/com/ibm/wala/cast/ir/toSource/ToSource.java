@@ -951,6 +951,9 @@ public abstract class ToSource {
               + loops.values().stream()
                   .map(loop -> loop.getLoopControl())
                   .collect(Collectors.toList()));
+      System.err.println(
+          "loops: "
+              + loops.values().stream().map(loop -> loop.toString()).collect(Collectors.toList()));
 
       for (ISSABasicBlock b : cfg) {
         if (loopHeaders.contains(b)) {
@@ -1350,22 +1353,31 @@ public abstract class ToSource {
      * l.iIndex() < r.iIndex(); } } } } return false; }
      */
 
-    public CAstNode toCAst(Loop currentLoop) {
+    public CAstNode toCAst(List<Loop> currentLoops) {
       CAst ast = new CAstImpl();
       List<CAstNode> elts = new LinkedList<>();
       List<CAstNode> decls = new LinkedList<>();
       List<List<SSAInstruction>> chunks = regionChunks.get(Pair.make(r, l));
+
+      Loop currentLoop =
+          (currentLoops == null || currentLoops.size() < 1)
+              ? null
+              : currentLoops.get(currentLoops.size() - 1);
 
       List<List<SSAInstruction>> loopChunks = new LinkedList<>();
       chunks.forEach(
           chunkInsts -> {
             // Ignore goto chunks for now
             if (!LoopHelper.gotoChunk(chunkInsts)) {
-              if (LoopHelper.shouldMoveAsLoopBody(cfg, chunkInsts, loops, null)) {
+              if (LoopHelper.shouldMoveAsLoopBody(cfg, chunkInsts, loops, currentLoops)) {
                 // move to loop chunks
                 loopChunks.add(chunkInsts);
               } else {
-                if (loopChunks.size() > 0) {
+                if (loopChunks.size() > 0
+                    // In nested loop, the assignment might be part of outside loop,
+                    // that should be translated as a normal chunk and at that time loopChunks might
+                    // not be empty
+                    && LoopHelper.isConditional(loopChunks.get(loopChunks.size() - 1))) {
                   // create loop
                   createLoop(cfg, loopChunks, new LinkedList<>(), decls, elts);
                 }
@@ -1484,7 +1496,7 @@ public abstract class ToSource {
 
       // translate loop body after conditional
       RegionTreeNode lr = children.get(instruction).get(body);
-      CAstNode condSuccessor = lr.toCAst(currentLoop);
+      CAstNode condSuccessor = lr.toCAst(parentLoops);
 
       if (LoopType.DOWHILE.equals(loopType)) {
         // if it's do while loop, use loopBlock and loopBlockInLoopControl
@@ -1504,7 +1516,7 @@ public abstract class ToSource {
         }
         if (loopControlElse != null) {
           RegionTreeNode rt = children.get(instruction).get(loopControlElse);
-          elseNodes.addAll(rt.toCAst(currentLoop).getChildren());
+          elseNodes.addAll(rt.toCAst(parentLoops).getChildren());
 
           if (elseNodes.size() > 0) {
             if (elseNodes.get(elseNodes.size() - 1).getKind() == CAstNode.BLOCK_STMT
@@ -1586,7 +1598,7 @@ public abstract class ToSource {
           Object varName = test.getChild(1).getChild(0).getValue();
           for (int i = loopBodyNodes.size() - 2; i >= 0; i--) {
             if (CAstNode.EXPR_STMT == loopBodyNodes.get(i).getKind()
-                && loopBodyNodes.get(i).getChildCount() == 1
+                && loopBodyNodes.get(i).getChildCount() > 0
                 && CAstNode.ASSIGN == loopBodyNodes.get(i).getChild(0).getKind()
                 && loopBodyNodes.get(i).getChild(0).getChildCount() > 0
                 && CAstNode.VAR == loopBodyNodes.get(i).getChild(0).getChild(0).getKind()
@@ -1644,7 +1656,7 @@ public abstract class ToSource {
         // skip the case when 'after' block is moved into loop body
         if (!after.equals(loopControlElse)) {
           RegionTreeNode ar = children.get(instruction).get(after);
-          CAstNode afterNode = ar.toCAst(currentLoop);
+          CAstNode afterNode = ar.toCAst(parentLoops);
 
           loopNode = ast.makeNode(CAstNode.BLOCK_STMT, loopNode, afterNode);
         }

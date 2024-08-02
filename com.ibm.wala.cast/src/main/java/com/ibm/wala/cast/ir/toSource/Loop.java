@@ -3,6 +3,7 @@ package com.ibm.wala.cast.ir.toSource;
 import com.ibm.wala.ssa.ISSABasicBlock;
 import com.ibm.wala.util.collections.HashSetFactory;
 import com.ibm.wala.util.collections.Pair;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.Set;
@@ -148,5 +149,15 @@ public class Loop {
   public ISSABasicBlock getLastBlock() {
     assert (parts.size() > 0);
     return allBlocks.stream().max(Comparator.comparing(ISSABasicBlock::getNumber)).get();
+  }
+
+  @Override
+  public String toString() {
+    return "Loop: "
+        + Arrays.toString(
+            allBlocks.stream()
+                .map(block -> block.getNumber())
+                .collect(Collectors.toList())
+                .toArray());
   }
 }
