@@ -1,7 +1,9 @@
 package com.ibm.wala.cast.ir.toSource;
 
 import com.ibm.wala.ssa.ISSABasicBlock;
+import com.ibm.wala.util.collections.Pair;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * A loop part is a set of all nodes in a control-flow cycle (allowing repetitions in the cycle) in
@@ -24,13 +26,11 @@ public class LoopPart {
   private Set<ISSABasicBlock> allBlocks;
 
   /**
-   * The blocks that have one control-edge to a block in the loop and one that is not in the loop
-   * This set will contain loop control to ease development
+   * The blocks that have one control-edge to a block in the loop and one that is not in the loop is
+   * called loop breaker This set will contain loop control to ease development The second value in
+   * the pair is loop exit Which is the successors of loop breakers that go out of the loop
    */
-  private Set<ISSABasicBlock> loopBreakers;
-
-  /** The successors of loop breakers that go out of the loop */
-  private Set<ISSABasicBlock> loopExits;
+  private Set<Pair<ISSABasicBlock, ISSABasicBlock>> loopBreakers;
 
   public ISSABasicBlock getLoopHeader() {
     return loopHeader;
@@ -57,18 +57,21 @@ public class LoopPart {
   }
 
   public Set<ISSABasicBlock> getLoopBreakers() {
+    assert (loopBreakers != null);
+    return loopBreakers.stream().map(pair -> pair.fst).collect(Collectors.toSet());
+  }
+
+  public Set<Pair<ISSABasicBlock, ISSABasicBlock>> getLoopBreakersExits() {
+    assert (loopBreakers != null);
     return loopBreakers;
   }
 
-  public void setLoopBreakers(Set<ISSABasicBlock> loopBreakers) {
+  public void setLoopBreakers(Set<Pair<ISSABasicBlock, ISSABasicBlock>> loopBreakers) {
     this.loopBreakers = loopBreakers;
   }
 
   public Set<ISSABasicBlock> getLoopExits() {
-    return loopExits;
-  }
-
-  public void setLoopExits(Set<ISSABasicBlock> loopExits) {
-    this.loopExits = loopExits;
+    assert (loopBreakers != null);
+    return loopBreakers.stream().map(pair -> pair.snd).collect(Collectors.toSet());
   }
 }

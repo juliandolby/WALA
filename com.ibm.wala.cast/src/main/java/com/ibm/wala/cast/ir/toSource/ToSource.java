@@ -849,7 +849,8 @@ public abstract class ToSource {
 
                         LoopPart part = new LoopPart();
 
-                        Set<ISSABasicBlock> loopExits = HashSetFactory.make();
+                        Set<Pair<ISSABasicBlock, ISSABasicBlock>> loopBreakers =
+                            HashSetFactory.make();
 
                         Set<ISSABasicBlock> forward =
                             DFS.getReachableNodes(cfgNoBack, Collections.singleton(n));
@@ -867,14 +868,6 @@ public abstract class ToSource {
                                 .get());
 
                         System.err.println("loop: " + allBlocks);
-
-                        allBlocks.forEach(
-                            bb -> {
-                              IteratorUtil.streamify(cfg.getSuccNodes(bb))
-                                  .filter(b -> !allBlocks.contains(b))
-                                  .forEach(sb -> loopExits.add(sb));
-                            });
-                        part.setLoopExits(loopExits);
 
                         Set<ISSABasicBlock> breakers = HashSetFactory.make();
                         breakers.addAll(
@@ -912,7 +905,14 @@ public abstract class ToSource {
                                           - b.getFirstInstructionIndex();
                                     })
                                 .collect(Collectors.toSet()));
-                        part.setLoopBreakers(breakers);
+
+                        breakers.forEach(
+                            bb -> {
+                              IteratorUtil.streamify(cfg.getSuccNodes(bb))
+                                  .filter(b -> !allBlocks.contains(b))
+                                  .forEach(sb -> loopBreakers.add(Pair.make(bb, sb)));
+                            });
+                        part.setLoopBreakers(loopBreakers);
 
                         assert (breakers.size() > 0);
 
@@ -923,16 +923,37 @@ public abstract class ToSource {
                                 .get());
 
                         assert (loops.containsKey(part.getLoopHeader()));
-                        loops.get(part.getLoopHeader()).addLoopPart(part, cfg);
+                        loops.get(part.getLoopHeader()).addLoopPart(part);
                       }
                     });
           });
+
+      // figure out nested loops
+      // handle nested loop
+      loops
+          .values()
+          .forEach(
+              loop -> {
+                for (Loop parent : loops.values()) {
+
+                  // check if loop header belongs to a loop
+                  if (parent != loop
+                      && parent.getAllBlocks().contains(loop.getLoopHeader())
+                      && parent.getAllBlocks().containsAll(loop.getLoopBreakers())) {
+                    // this is nested loop
+                    parent.addLoopNested(loop);
+                  }
+                }
+              });
 
       System.err.println(
           "loop controls: "
               + loops.values().stream()
                   .map(loop -> loop.getLoopControl())
                   .collect(Collectors.toList()));
+      System.err.println(
+          "loops: "
+              + loops.values().stream().map(loop -> loop.toString()).collect(Collectors.toList()));
 
       for (ISSABasicBlock b : cfg) {
         if (loopHeaders.contains(b)) {
@@ -1332,24 +1353,38 @@ public abstract class ToSource {
      * l.iIndex() < r.iIndex(); } } } } return false; }
      */
 
-    public CAstNode toCAst(Loop currentLoop) {
+    public CAstNode toCAst(List<Loop> currentLoops) {
       CAst ast = new CAstImpl();
       List<CAstNode> elts = new LinkedList<>();
       List<CAstNode> decls = new LinkedList<>();
       List<List<SSAInstruction>> chunks = regionChunks.get(Pair.make(r, l));
+
+      Loop currentLoop =
+          (currentLoops == null || currentLoops.size() < 1)
+              ? null
+              : currentLoops.get(currentLoops.size() - 1);
 
       List<List<SSAInstruction>> loopChunks = new LinkedList<>();
       chunks.forEach(
           chunkInsts -> {
             // Ignore goto chunks for now
             if (!LoopHelper.gotoChunk(chunkInsts)) {
-              if (LoopHelper.shouldMoveAsLoopBody(cfg, chunkInsts, loops, null)) {
+              if (LoopHelper.shouldMoveAsLoopBody(cfg, chunkInsts, loops, currentLoops)) {
                 // move to loop chunks
                 loopChunks.add(chunkInsts);
               } else {
-                if (loopChunks.size() > 0) {
+                if (loopChunks.size() > 0
+                    // In nested loop, the assignment might be part of outside loop,
+                    // that should be translated as a normal chunk and at that time loopChunks might
+                    // not be empty
+                    && LoopHelper.isConditional(loopChunks.get(loopChunks.size() - 1))) {
                   // create loop
-                  createLoop(cfg, loopChunks, new LinkedList<>(), decls, elts);
+                  createLoop(
+                      cfg,
+                      loopChunks,
+                      currentLoops == null ? new LinkedList<>() : currentLoops,
+                      decls,
+                      elts);
                 }
                 Pair<CAstNode, List<CAstNode>> stuff =
                     makeToCAst(chunkInsts).processChunk(decls, packages, currentLoop);
@@ -1466,7 +1501,7 @@ public abstract class ToSource {
 
       // translate loop body after conditional
       RegionTreeNode lr = children.get(instruction).get(body);
-      CAstNode condSuccessor = lr.toCAst(currentLoop);
+      CAstNode condSuccessor = lr.toCAst(parentLoops);
 
       if (LoopType.DOWHILE.equals(loopType)) {
         // if it's do while loop, use loopBlock and loopBlockInLoopControl
@@ -1486,7 +1521,7 @@ public abstract class ToSource {
         }
         if (loopControlElse != null) {
           RegionTreeNode rt = children.get(instruction).get(loopControlElse);
-          elseNodes.addAll(rt.toCAst(currentLoop).getChildren());
+          elseNodes.addAll(rt.toCAst(parentLoops).getChildren());
 
           if (elseNodes.size() > 0) {
             if (elseNodes.get(elseNodes.size() - 1).getKind() == CAstNode.BLOCK_STMT
@@ -1550,11 +1585,45 @@ public abstract class ToSource {
         // The incremental which originally second last of loop body
         // It should not be EXPR_STMT to avoid indent and comma
         loopBodyNodes.addAll(condSuccessor.getChildren());
-        CAstNode assignNode = loopBodyNodes.remove(loopBodyNodes.size() - 2);
-        if (CAstNode.EXPR_STMT == assignNode.getKind() && assignNode.getChildCount() == 1) {
-          assignNode = assignNode.getChild(0);
+
+        // Looking for
+        //        EXPR_STMT
+        //        ASSIGN
+        //          VAR
+        //            "tmp_37"
+        //          BINARY_EXPR
+        //            "+"
+        //            VAR
+        //              "tmp_37"
+        //            "1"
+        CAstNode assignNode = null;
+        if (test.getChildCount() > 1
+            && test.getChild(1).getChildCount() > 0
+            && test.getChild(1).getChild(0).getValue() != null) {
+          Object varName = test.getChild(1).getChild(0).getValue();
+          for (int i = loopBodyNodes.size() - 2; i >= 0; i--) {
+            if (CAstNode.EXPR_STMT == loopBodyNodes.get(i).getKind()
+                && loopBodyNodes.get(i).getChildCount() > 0
+                && CAstNode.ASSIGN == loopBodyNodes.get(i).getChild(0).getKind()
+                && loopBodyNodes.get(i).getChild(0).getChildCount() > 0
+                && CAstNode.VAR == loopBodyNodes.get(i).getChild(0).getChild(0).getKind()
+                && loopBodyNodes.get(i).getChild(0).getChild(0).getChildCount() > 0
+                && varName.equals(
+                    loopBodyNodes.get(i).getChild(0).getChild(0).getChild(0).getValue())) {
+              assignNode = loopBodyNodes.get(i);
+              break;
+            }
+          }
         }
-        forConditions.add(assignNode);
+
+        if (assignNode != null) {
+          loopBodyNodes.remove(assignNode);
+          assignNode = assignNode.getChild(0);
+          forConditions.add(assignNode);
+        } else {
+          forConditions.add(ast.makeNode(CAstNode.EMPTY));
+        }
+
         // form a new test as block statement, this will help to tell it's a for loop
         test = ast.makeNode(CAstNode.BLOCK_STMT, forConditions);
 
@@ -1592,7 +1661,7 @@ public abstract class ToSource {
         // skip the case when 'after' block is moved into loop body
         if (!after.equals(loopControlElse)) {
           RegionTreeNode ar = children.get(instruction).get(after);
-          CAstNode afterNode = ar.toCAst(currentLoop);
+          CAstNode afterNode = ar.toCAst(parentLoops);
 
           loopNode = ast.makeNode(CAstNode.BLOCK_STMT, loopNode, afterNode);
         }
@@ -2238,11 +2307,18 @@ public abstract class ToSource {
               && loop.getLoopBreakers().contains(branchBB)
               && !loop.getLoopHeader().equals(branchBB)) {
             if (loop.getLoopExits().contains(notTaken)) {
-              System.out.println(
-                  "keep original logic to add break to notTakenBlock"); // TODO: need it for a
-              // while to see when to
-              // add break
-              notTakenBlock.add(ast.makeNode(CAstNode.BREAK));
+              if (notTakenBlock.get(notTakenBlock.size() - 1).getKind() == CAstNode.BLOCK_STMT
+                  && notTakenBlock.get(notTakenBlock.size() - 1).getChild(0).getKind()
+                      == CAstNode.BREAK) {
+                System.out.println(
+                    " notTakenBlock is end with break, no need to add break"); // TODO: need it for
+                // a while to see
+                // when to add break
+              } else {
+                System.out.println(
+                    "notTakenBlock is having nodes and not end with break, need to add break"); // TODO: need it for a while to see when to add break
+                notTakenBlock.add(ast.makeNode(CAstNode.BREAK));
+              }
             } else {
               if (takenBlock == null)
                 takenBlock = Collections.singletonList(ast.makeNode(CAstNode.BREAK));

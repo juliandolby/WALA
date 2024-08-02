@@ -258,10 +258,20 @@ public class LoopHelper {
       if (isAssignment(chunk)) {
         // if it is loop control, assignment should be ignored
         // except the last assignment for for-loop
-        if (LoopType.FOR.equals(getLoopType(cfg, loop))) {
+        if (chunk.size() == 1
+            && chunk.get(0) instanceof AssignInstruction
+            && LoopType.FOR.equals(getLoopType(cfg, loop))) {
+          int def = ((AssignInstruction) chunk.get(0)).getDef();
           List<SSAInstruction> controlInsts =
               IteratorUtil.streamify(currentBB.iterator()).collect(Collectors.toList());
-          return chunk.contains(controlInsts.get(controlInsts.size() - 2));
+          SSAInstruction op = controlInsts.get(controlInsts.size() - 2);
+          if (op instanceof SSABinaryOpInstruction) {
+            for (int i = 0; i < ((SSABinaryOpInstruction) op).getNumberOfUses(); i++) {
+              if (((SSABinaryOpInstruction) op).getUse(i) == def) {
+                return true;
+              }
+            }
+          }
         }
         return false;
       }
