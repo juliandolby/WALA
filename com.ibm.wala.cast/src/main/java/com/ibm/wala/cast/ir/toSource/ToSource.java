@@ -1379,7 +1379,12 @@ public abstract class ToSource {
                     // not be empty
                     && LoopHelper.isConditional(loopChunks.get(loopChunks.size() - 1))) {
                   // create loop
-                  createLoop(cfg, loopChunks, new LinkedList<>(), decls, elts);
+                  createLoop(
+                      cfg,
+                      loopChunks,
+                      currentLoops == null ? new LinkedList<>() : currentLoops,
+                      decls,
+                      elts);
                 }
                 Pair<CAstNode, List<CAstNode>> stuff =
                     makeToCAst(chunkInsts).processChunk(decls, packages, currentLoop);
@@ -2302,11 +2307,18 @@ public abstract class ToSource {
               && loop.getLoopBreakers().contains(branchBB)
               && !loop.getLoopHeader().equals(branchBB)) {
             if (loop.getLoopExits().contains(notTaken)) {
-              System.out.println(
-                  "keep original logic to add break to notTakenBlock"); // TODO: need it for a
-              // while to see when to
-              // add break
-              notTakenBlock.add(ast.makeNode(CAstNode.BREAK));
+              if (notTakenBlock.get(notTakenBlock.size() - 1).getKind() == CAstNode.BLOCK_STMT
+                  && notTakenBlock.get(notTakenBlock.size() - 1).getChild(0).getKind()
+                      == CAstNode.BREAK) {
+                System.out.println(
+                    " notTakenBlock is end with break, no need to add break"); // TODO: need it for
+                // a while to see
+                // when to add break
+              } else {
+                System.out.println(
+                    "notTakenBlock is having nodes and not end with break, need to add break"); // TODO: need it for a while to see when to add break
+                notTakenBlock.add(ast.makeNode(CAstNode.BREAK));
+              }
             } else {
               if (takenBlock == null)
                 takenBlock = Collections.singletonList(ast.makeNode(CAstNode.BREAK));
