@@ -8,6 +8,7 @@ import com.ibm.wala.ssa.SSAConditionalBranchInstruction;
 import com.ibm.wala.ssa.SSAGotoInstruction;
 import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.ssa.SSAPhiInstruction;
+import com.ibm.wala.ssa.SSAReturnInstruction;
 import com.ibm.wala.ssa.SSAUnaryOpInstruction;
 import com.ibm.wala.ssa.SSAUnspecifiedExprInstruction;
 import com.ibm.wala.util.collections.IteratorUtil;
@@ -92,14 +93,36 @@ public class LoopHelper {
       if (!notWhileLoop) {
         // check loop exits
         if (loop.getLoopExits().size() > 1) {
-          // if all loop exits normal successor are the same, it's while loop
-          List<ISSABasicBlock> nextBBs =
-              loop.getLoopExits().stream()
-                  .map(ex -> cfg.getNormalSuccessors(ex))
-                  .flatMap(Collection::stream)
-                  .distinct()
+          // if there are more than one loop exit and there are some instructions after loop
+          // control, it should not be a while loop
+          Collection<ISSABasicBlock> loopExits = cfg.getNormalSuccessors(loop.getLoopControl());
+          loopExits.retainAll(loop.getLoopExits());
+          assert (loopExits.size() > 0);
+          List<SSAInstruction> exitInsts =
+              IteratorUtil.streamify(loopExits.iterator().next().iterator())
                   .collect(Collectors.toList());
-          return nextBBs.size() < 2;
+          for (SSAInstruction inst : exitInsts) {
+            if (inst.iIndex() < 0) continue;
+            // TODO: need to check if any other case should be placed here
+            if (inst instanceof SSAReturnInstruction) {
+              continue;
+            }
+            notWhileLoop = true;
+            break;
+          }
+
+          if (!notWhileLoop) {
+            // if all loop exits normal successor are the same, it's while loop
+            List<ISSABasicBlock> nextBBs =
+                loop.getLoopExits().stream()
+                    .map(ex -> cfg.getNormalSuccessors(ex))
+                    .flatMap(Collection::stream)
+                    .distinct()
+                    .collect(Collectors.toList());
+            return nextBBs.size() < 2;
+          } else {
+            return false;
+          }
         } else {
           return true;
         }
