@@ -1397,7 +1397,7 @@ public abstract class ToSource {
 
         @Override
         public Map<CAstNode, Collection<CAstEntity>> getAllScopedEntities() {
-          return Map.of();
+          return Collections.emptyMap();
         }
 
         @Override
@@ -1442,7 +1442,7 @@ public abstract class ToSource {
 
         @Override
         public Collection<CAstQualifier> getQualifiers() {
-          return List.of();
+          return Collections.emptyList();
         }
 
         @Override
@@ -1452,7 +1452,7 @@ public abstract class ToSource {
 
         @Override
         public Collection<CAstAnnotation> getAnnotations() {
-          return List.of();
+          return Collections.emptyList();
         }
       };
     }
