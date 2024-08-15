@@ -66,7 +66,8 @@ public class ToSourceFromJava extends ToSource {
 
     @Override
     protected ToCAst makeToCAst(List<SSAInstruction> c) {
-      return new ToCAst(c, new CodeGenerationContext(types, mergePhis, false, super.positionRecorder)) {
+      return new ToCAst(
+          c, new CodeGenerationContext(types, mergePhis, false, super.positionRecorder)) {
 
         class JavaVisitor
             extends com.ibm.wala.cast.ir.toSource.ToSource.RegionTreeNode.ToCAst.Visitor
