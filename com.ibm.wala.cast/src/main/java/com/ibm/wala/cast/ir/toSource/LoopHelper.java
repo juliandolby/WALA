@@ -23,40 +23,43 @@ import java.util.stream.Collectors;
 public class LoopHelper {
 
   private static boolean isForLoop(Loop loop) {
+    boolean isForLoop = false;
     if (loop.getLoopHeader().equals(loop.getLoopControl()) && loop.getLoopBreakers().size() < 2) {
       // A for-loop is targeting for PERFORM n TIMES for now
       // The loopHeader and loopControl are the same
       // The loopHeader should contains 3 or more than 3 instructions (based on current samples)
-      // The last 3 instructions in loopHeader should follow a rule on both type and relationship
+      // The last few instructions in loopHeader should follow a rule on both type and relationship
       // And the second last instruction in loop body should be incremental
       List<SSAInstruction> headerInsts =
           IteratorUtil.streamify(loop.getLoopHeader().iterator()).collect(Collectors.toList());
 
-      if (headerInsts.size() > 2
-          && headerInsts.get(headerInsts.size() - 3) instanceof SSAPhiInstruction
-          && headerInsts.get(headerInsts.size() - 2) instanceof SSABinaryOpInstruction
-          && headerInsts.get(headerInsts.size() - 1) instanceof SSAConditionalBranchInstruction) {
-        // The target of first Inst should be the val1 of the next one
-        int phiResult = ((SSAPhiInstruction) headerInsts.get(headerInsts.size() - 3)).getDef();
-        int opResult = ((SSABinaryOpInstruction) headerInsts.get(headerInsts.size() - 2)).getDef();
+      int index = headerInsts.size() - 1;
 
-        if (((SSABinaryOpInstruction) headerInsts.get(headerInsts.size() - 2)).getUse(0)
-                == phiResult
-            && ((SSAConditionalBranchInstruction) headerInsts.get(headerInsts.size() - 1)).getUse(0)
-                == opResult) {
-          List<SSAInstruction> lastInsts =
-              IteratorUtil.streamify(loop.getLastBlock().iterator()).collect(Collectors.toList());
-          if (lastInsts.size() > 1) {
-            SSAInstruction lastOp = lastInsts.get(lastInsts.size() - 2);
-            if (lastOp instanceof SSABinaryOpInstruction) {
-              return ((SSAPhiInstruction) headerInsts.get(headerInsts.size() - 3)).getUse(0)
-                  == ((SSABinaryOpInstruction) lastOp).getDef();
+      int nextUse = -1;
+
+      while (index >= 0) {
+        SSAInstruction currentInst = headerInsts.get(index);
+        if (currentInst instanceof SSAConditionalBranchInstruction) {
+          nextUse = currentInst.getUse(0);
+        } else {
+          if (currentInst instanceof SSAUnaryOpInstruction
+              || currentInst instanceof SSABinaryOpInstruction) {
+            if (nextUse == currentInst.getDef()) {
+              nextUse = currentInst.getUse(0);
+            } else {
+              break;
+            }
+          } else if (currentInst instanceof SSAPhiInstruction) {
+            if (nextUse == currentInst.getDef()) {
+              isForLoop = true;
             }
           }
         }
+
+        index--;
       }
     }
-    return false;
+    return isForLoop;
   }
 
   private static boolean isWhileLoop(PrunedCFG<SSAInstruction, ISSABasicBlock> cfg, Loop loop) {
@@ -288,6 +291,9 @@ public class LoopHelper {
           List<SSAInstruction> controlInsts =
               IteratorUtil.streamify(currentBB.iterator()).collect(Collectors.toList());
           SSAInstruction op = controlInsts.get(controlInsts.size() - 2);
+          if (op instanceof SSAUnaryOpInstruction) {
+            op = controlInsts.get(controlInsts.size() - 3);
+          }
           if (op instanceof SSABinaryOpInstruction) {
             for (int i = 0; i < ((SSABinaryOpInstruction) op).getNumberOfUses(); i++) {
               if (((SSABinaryOpInstruction) op).getUse(i) == def) {

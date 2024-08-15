@@ -109,4 +109,22 @@ public class CAstHelper {
         && n.getChildCount() > 1
         && n.getChild(0) == CAstOperator.OP_NOT;
   }
+
+  /**
+   * Find out the variable name that's used in the test
+   * 
+   * @param test The CAstNode of a test, usually it is the condition in if statement
+   * @return The object of variable name
+   */
+  public static Object findVariableNameFromTest(CAstNode test) {
+    Object varName = null;
+    if (test.getChildCount() > 1
+        && test.getChild(1).getChildCount() > 0
+        && test.getChild(1).getChild(0).getValue() != null) {
+      if (CAstNode.BINARY_EXPR == test.getChild(1).getKind()) {
+        varName = test.getChild(1).getChild(1).getChild(0).getValue();
+      } else varName = test.getChild(1).getChild(0).getValue();
+    }
+    return varName;
+  }
 }

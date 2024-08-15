@@ -539,7 +539,10 @@ public abstract class ToSource {
     }
 
     public CodeGenerationContext(
-        TypeInference types, IntegerUnionFind mergePhis, boolean isTopLevel, CAstSourcePositionRecorder positionRecorder) {
+        TypeInference types,
+        IntegerUnionFind mergePhis,
+        boolean isTopLevel,
+        CAstSourcePositionRecorder positionRecorder) {
       this.types = types;
       this.mergePhis = mergePhis;
       this.parentPrecedence = Integer.MAX_VALUE;
@@ -607,7 +610,9 @@ public abstract class ToSource {
       return ast.makeConstant(sourceNames.get(vn));
     }
 
-    protected CAstSourcePositionRecorder getPositionRecorder() { return this.positionRecorder; }
+    protected CAstSourcePositionRecorder getPositionRecorder() {
+      return this.positionRecorder;
+    }
 
     private Pair<BasicNaturalRelation, Iterable<SSAPhiInstruction>> orderPhisAndDetectCycles(
         Iterator<SSAPhiInstruction> blockPhis) {
@@ -1361,7 +1366,6 @@ public abstract class ToSource {
      * l.iIndex() < r.iIndex(); } } } } return false; }
      */
 
-
     public CAstEntity toCAstEntity(List<Loop> loops) {
       CAstNode root = toCAst(loops);
       return new CAstEntity() {
@@ -1690,7 +1694,7 @@ public abstract class ToSource {
         // It should not be EXPR_STMT to avoid indent and comma
         loopBodyNodes.addAll(condSuccessor.getChildren());
 
-        // Looking for
+        // Looking for assignment from test like
         //        EXPR_STMT
         //        ASSIGN
         //          VAR
@@ -1701,10 +1705,8 @@ public abstract class ToSource {
         //              "tmp_37"
         //            "1"
         CAstNode assignNode = null;
-        if (test.getChildCount() > 1
-            && test.getChild(1).getChildCount() > 0
-            && test.getChild(1).getChild(0).getValue() != null) {
-          Object varName = test.getChild(1).getChild(0).getValue();
+        Object varName = CAstHelper.findVariableNameFromTest(test);
+        if (varName != null) {
           for (int i = loopBodyNodes.size() - 2; i >= 0; i--) {
             if (CAstNode.EXPR_STMT == loopBodyNodes.get(i).getKind()
                 && loopBodyNodes.get(i).getChildCount() > 0
@@ -1847,7 +1849,8 @@ public abstract class ToSource {
     }
 
     protected ToCAst makeToCAst(List<SSAInstruction> insts) {
-      return new ToCAst(insts, new CodeGenerationContext(types, mergePhis, false, this.positionRecorder));
+      return new ToCAst(
+          insts, new CodeGenerationContext(types, mergePhis, false, this.positionRecorder));
     }
 
     private void toString(StringBuffer text, int level) {
@@ -2020,14 +2023,18 @@ public abstract class ToSource {
 
         /**
          * A very stateful method with the following pre-conditions & effects.
+         *
          * <ul>
-         * <li>PRE: this.ir.getMethod() returns and instance of AstMethod with valid position info for the given iIndex</li>
-         * <li>EFFECTS: Adds position information for current value of this.node using position info from this.ir.getMethod()</li>
+         *   <li>PRE: this.ir.getMethod() returns and instance of AstMethod with valid position info
+         *       for the given iIndex
+         *   <li>EFFECTS: Adds position information for current value of this.node using position
+         *       info from this.ir.getMethod()
          * </ul>
          */
         private CAstNode markPosition(CAstNode node, int iIndex) {
-          assert (ir.getMethod() instanceof AstMethod) : "Expected AstMethod containing source position information";
-          AstMethod m = (AstMethod)ir.getMethod();
+          assert (ir.getMethod() instanceof AstMethod)
+              : "Expected AstMethod containing source position information";
+          AstMethod m = (AstMethod) ir.getMethod();
           Position pos = m.getSourcePosition(iIndex);
           if (pos != null) {
             positionRecorder.setPosition(node, pos);
@@ -3504,7 +3511,10 @@ public abstract class ToSource {
         pw = new PrintWriter(new TeeWriter(out, sw));
       }
       ToJavaVisitor toJava = makeToJavaVisitor(ir, pw, level, varTypes);
-      toJava.visit(ast, new CodeGenerationContext(types, root.mergePhis, true, root.getPositionRecorder()), toJava);
+      toJava.visit(
+          ast,
+          new CodeGenerationContext(types, root.mergePhis, true, root.getPositionRecorder()),
+          toJava);
       if (codeRecorder != null) {
         codeRecorder.put(ir.getMethod().getReference(), sw.getBuffer().toString());
       }
@@ -3524,10 +3534,18 @@ public abstract class ToSource {
                 try {
                   if (s.containsKey("v")) {
                     CAstNode v = (CAstNode) s.get("v");
-                    ev.visit(v, new CodeGenerationContext(types, root.mergePhis, true, root.getPositionRecorder()), ev);
+                    ev.visit(
+                        v,
+                        new CodeGenerationContext(
+                            types, root.mergePhis, true, root.getPositionRecorder()),
+                        ev);
                     o.print(" = ");
                   }
-                  ev.visit(e, new CodeGenerationContext(types, root.mergePhis, true, root.getPositionRecorder()), ev);
+                  ev.visit(
+                      e,
+                      new CodeGenerationContext(
+                          types, root.mergePhis, true, root.getPositionRecorder()),
+                      ev);
                   o.print("\n");
                   o.flush();
                 } catch (Throwable e1) {
