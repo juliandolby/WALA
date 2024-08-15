@@ -11,6 +11,7 @@ import com.ibm.wala.ssa.SSAPhiInstruction;
 import com.ibm.wala.ssa.SSAReturnInstruction;
 import com.ibm.wala.ssa.SSAUnaryOpInstruction;
 import com.ibm.wala.ssa.SSAUnspecifiedExprInstruction;
+import com.ibm.wala.ssa.SymbolTable;
 import com.ibm.wala.util.collections.IteratorUtil;
 import java.util.Collection;
 import java.util.Iterator;
@@ -22,10 +23,10 @@ import java.util.stream.Collectors;
 /** The helper class for some methods of loop */
 public class LoopHelper {
 
-  private static boolean isForLoop(Loop loop) {
+  private static boolean isForLoop(SymbolTable ST, Loop loop) {
     boolean isForLoop = false;
     if (loop.getLoopHeader().equals(loop.getLoopControl()) && loop.getLoopBreakers().size() < 2) {
-      // A for-loop is targeting for PERFORM n TIMES for now
+      // A for-loop is targeting for PERFORM n TIMES and PERFORM VARYING for now
       // The loopHeader and loopControl are the same
       // The loopHeader should contains 3 or more than 3 instructions (based on current samples)
       // The last few instructions in loopHeader should follow a rule on both type and relationship
@@ -51,7 +52,10 @@ public class LoopHelper {
             }
           } else if (currentInst instanceof SSAPhiInstruction) {
             if (nextUse == currentInst.getDef()) {
-              isForLoop = true;
+              isForLoop =
+                  currentInst.getNumberOfUses() > 1
+                      && ST.isConstant(currentInst.getUse(1))
+                      && incrementalAtLast(loop, currentInst.getUse(0));
             }
           }
         }
@@ -60,6 +64,14 @@ public class LoopHelper {
       }
     }
     return isForLoop;
+  }
+
+  private static boolean incrementalAtLast(Loop loop, int use) {
+    List<SSAInstruction> lastInsts =
+        IteratorUtil.streamify(loop.getLastBlock().iterator()).collect(Collectors.toList());
+    return lastInsts.size() > 1
+        && lastInsts.get(lastInsts.size() - 2) instanceof SSABinaryOpInstruction
+        && lastInsts.get(lastInsts.size() - 2).getDef() == use;
   }
 
   private static boolean isWhileLoop(PrunedCFG<SSAInstruction, ISSABasicBlock> cfg, Loop loop) {
@@ -169,11 +181,12 @@ public class LoopHelper {
    * @param loop The loop for type
    * @return The loop type
    */
-  public static LoopType getLoopType(PrunedCFG<SSAInstruction, ISSABasicBlock> cfg, Loop loop) {
+  public static LoopType getLoopType(
+      PrunedCFG<SSAInstruction, ISSABasicBlock> cfg, SymbolTable ST, Loop loop) {
     if (loop.getLoopHeader().equals(loop.getLoopControl())) {
       // check if it's for loop
       // For now a for-loop refers PERFORM n TIMES
-      if (isForLoop(loop)) return LoopType.FOR;
+      if (isForLoop(ST, loop)) return LoopType.FOR;
 
       // usually for loop will be detected as while loop too, so that check for-loop first
       if (isWhileLoop(cfg, loop)) return LoopType.WHILE;
@@ -259,6 +272,7 @@ public class LoopHelper {
    */
   public static boolean shouldMoveAsLoopBody(
       PrunedCFG<SSAInstruction, ISSABasicBlock> cfg,
+      SymbolTable ST,
       List<SSAInstruction> chunk,
       Map<ISSABasicBlock, Loop> loops,
       List<Loop> skipLoop) {
@@ -286,7 +300,7 @@ public class LoopHelper {
         // except the last assignment for for-loop
         if (chunk.size() == 1
             && chunk.get(0) instanceof AssignInstruction
-            && LoopType.FOR.equals(getLoopType(cfg, loop))) {
+            && LoopType.FOR.equals(getLoopType(cfg, ST, loop))) {
           int def = ((AssignInstruction) chunk.get(0)).getDef();
           List<SSAInstruction> controlInsts =
               IteratorUtil.streamify(currentBB.iterator()).collect(Collectors.toList());
@@ -359,13 +373,14 @@ public class LoopHelper {
    */
   public static boolean shouldMergeTest(
       PrunedCFG<SSAInstruction, ISSABasicBlock> cfg,
+      SymbolTable ST,
       SSAInstruction inst,
       Map<ISSABasicBlock, Loop> loops) {
     if ((inst instanceof SSAConditionalBranchInstruction)) {
       Loop loop = getLoopByInstruction(cfg, inst, loops);
       return loop != null
           && loop.getLoopControl().equals(cfg.getBlockForInstruction(inst.iIndex()))
-          && LoopType.WHILE.equals(getLoopType(cfg, loop));
+          && LoopType.WHILE.equals(getLoopType(cfg, ST, loop));
     }
     return false;
   }

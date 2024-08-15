@@ -112,7 +112,7 @@ public class CAstHelper {
 
   /**
    * Find out the variable name that's used in the test
-   * 
+   *
    * @param test The CAstNode of a test, usually it is the condition in if statement
    * @return The object of variable name
    */

@@ -1226,7 +1226,7 @@ public abstract class ToSource {
                               // otherwise return null then the instructions will be
                               // translated
                               // into several lines and might be placed in different places
-                              LoopHelper.shouldMergeTest(cfg, inst, loops) ? inst : null);
+                              LoopHelper.shouldMergeTest(cfg, ST, inst, loops) ? inst : null);
                       if (insts.isEmpty()) {
                         insts.add(inst);
                         chunks.insert(new LinkedList<>(insts));
@@ -1477,7 +1477,7 @@ public abstract class ToSource {
           chunkInsts -> {
             // Ignore goto chunks for now
             if (!LoopHelper.gotoChunk(chunkInsts)) {
-              if (LoopHelper.shouldMoveAsLoopBody(cfg, chunkInsts, loops, currentLoops)) {
+              if (LoopHelper.shouldMoveAsLoopBody(cfg, ST, chunkInsts, loops, currentLoops)) {
                 // move to loop chunks
                 loopChunks.add(chunkInsts);
               } else {
@@ -1549,7 +1549,7 @@ public abstract class ToSource {
       // TODO: this is based on the assumption that the first conditional will be the loop control
       assert (LoopHelper.isLoopControl(cfg, condChunk, currentLoop));
 
-      LoopType loopType = LoopHelper.getLoopType(cfg, currentLoop);
+      LoopType loopType = LoopHelper.getLoopType(cfg, ST, currentLoop);
 
       SSAInstruction instruction =
           condChunk.stream()
