@@ -943,18 +943,23 @@ public abstract class ToSource {
 
       // figure out nested loops
       // handle nested loop
-      loops
-          .values()
+      loops.keySet().stream()
+          .sorted(
+              (a, b) -> {
+                return b.getNumber() - a.getNumber();
+              })
           .forEach(
-              loop -> {
+              loopHeader -> {
                 for (Loop parent : loops.values()) {
 
                   // check if loop header belongs to a loop
-                  if (parent != loop
-                      && parent.getAllBlocks().contains(loop.getLoopHeader())
-                      && parent.getAllBlocks().containsAll(loop.getLoopBreakers())) {
+                  if (parent != loops.get(loopHeader)
+                      && parent.getAllBlocks().contains(loopHeader)
+                      && parent
+                          .getAllBlocks()
+                          .containsAll(loops.get(loopHeader).getLoopBreakers())) {
                     // this is nested loop
-                    parent.addLoopNested(loop);
+                    parent.addLoopNested(loops.get(loopHeader));
                   }
                 }
               });
