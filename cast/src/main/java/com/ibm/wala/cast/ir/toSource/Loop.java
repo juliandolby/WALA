@@ -6,6 +6,7 @@ import com.ibm.wala.util.collections.Pair;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -175,5 +176,26 @@ public class Loop {
         .map(pair -> pair.fst)
         .findFirst()
         .get();
+  }
+
+  public boolean isLastBlockOfPartInTheMiddle(ISSABasicBlock next) {
+    boolean result = false;
+    if (parts.size() > 1) {
+      List<ISSABasicBlock> lastBlocksInParts =
+          parts.stream()
+              .map(
+                  pp ->
+                      pp.getAllBlocks().stream()
+                          .max(Comparator.comparing(ISSABasicBlock::getNumber))
+                          .get())
+              .collect(Collectors.toList());
+      result =
+          lastBlocksInParts.contains(next)
+              && !lastBlocksInParts.stream()
+                  .max(Comparator.comparing(ISSABasicBlock::getNumber))
+                  .get()
+                  .equals(next);
+    }
+    return result;
   }
 }

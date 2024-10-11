@@ -2257,11 +2257,13 @@ public abstract class ToSource {
         public void visitGoto(SSAGotoInstruction inst) {
           Loop loop = currentLoops.size() > 0 ? currentLoops.get(currentLoops.size() - 1) : null;
           ISSABasicBlock bb = cfg.getBlockForInstruction(inst.iIndex());
+          ISSABasicBlock next = cfg.getNormalSuccessors(bb).iterator().next();
 
           if (loop != null
-              && loop.getLoopHeader().equals(cfg.getNormalSuccessors(bb).iterator().next())
-              && !loop.isLastBlock(bb)) {
-            // if there are more than one loop part, only last one should not generate CONTINUE
+              && loops.containsKey(next)
+              && loops.get(next).isLastBlockOfPartInTheMiddle(bb)) {
+            // if there are more than one loop part, only last one should not generate CONTINUE,
+            // other loop part's last block should generate CONTINUE
             node = ast.makeNode(CAstNode.CONTINUE);
           } else if (loop != null && loop.getLoopExits().containsAll(cfg.getNormalSuccessors(bb))) {
             node = ast.makeNode(CAstNode.BLOCK_STMT, ast.makeNode(CAstNode.BREAK));
@@ -2618,16 +2620,16 @@ public abstract class ToSource {
               && loop.getLoopBreakers().contains(branchBB)
               && !loop.getLoopHeader().equals(branchBB)) {
             if (loop.getLoopExits().contains(notTaken)) {
-              if (notTakenBlock.get(notTakenBlock.size() - 1).getKind() == CAstNode.BLOCK_STMT
-                  && notTakenBlock.get(notTakenBlock.size() - 1).getChild(0).getKind()
-                      == CAstNode.BREAK) {
+              if (CAstHelper.endWithBreakContinue(notTakenBlock)) {
                 System.out.println(
-                    " notTakenBlock is end with break, no need to add break"); // TODO: need it for
+                    " notTakenBlock is end with break or continue, no need to add break"); // TODO:
+                // need
+                // it for
                 // a while to see
                 // when to add break
               } else {
                 System.out.println(
-                    "notTakenBlock is having nodes and not end with break, need to add break"); // TODO: need it for a while to see when to add break
+                    "notTakenBlock is having nodes and not end with break or continue, need to add break"); // TODO: need it for a while to see when to add break
                 notTakenBlock.add(ast.makeNode(CAstNode.BREAK));
               }
 
@@ -2653,16 +2655,16 @@ public abstract class ToSource {
               if (takenBlock == null)
                 takenBlock = Collections.singletonList(ast.makeNode(CAstNode.BREAK));
               else {
-                if (takenBlock.get(takenBlock.size() - 1).getKind() == CAstNode.BLOCK_STMT
-                    && takenBlock.get(takenBlock.size() - 1).getChild(0).getKind()
-                        == CAstNode.BREAK) {
+                if (CAstHelper.endWithBreakContinue(takenBlock)) {
                   System.out.println(
-                      " takenBlock is end with break, no need to add break"); // TODO: need it for
+                      " takenBlock is end with break or continue, no need to add break"); // TODO:
+                  // need it
+                  // for
                   // a while to see
                   // when to add break
                 } else {
                   System.out.println(
-                      "takenBlock is having nodes and not end with break, need to add break"); // TODO: need it for a while to see when to add break
+                      "takenBlock is having nodes and not end with break or continue, need to add break"); // TODO: need it for a while to see when to add break
                   takenBlock.add(ast.makeNode(CAstNode.BREAK));
                 }
               }
