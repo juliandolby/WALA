@@ -178,6 +178,14 @@ public class Loop {
         .get();
   }
 
+  public ISSABasicBlock getLoopExitByBreaker(ISSABasicBlock breaker) {
+    return loopBreakers.stream()
+        .filter(pair -> breaker.equals(pair.fst))
+        .map(pair -> pair.snd)
+        .findFirst()
+        .get();
+  }
+
   public boolean isLastBlockOfPartInTheMiddle(ISSABasicBlock next) {
     boolean result = false;
     if (parts.size() > 1) {

@@ -962,7 +962,7 @@ public abstract class ToSource {
       // figure out nested loops
       // handle nested loop
       List<HashMap<ISSABasicBlock, List<Loop>>> loopRelation =
-          LoopHelper.updateLoopRelationship(loops);
+          LoopHelper.updateLoopRelationship(cfg, loops);
       assert (loopRelation.size() == 3);
       jumpToTop = loopRelation.get(0);
       jumpToOutside = loopRelation.get(1);
@@ -1740,10 +1740,17 @@ public abstract class ToSource {
                 condSuccessor.getChildren().toArray(new CAstNode[condSuccessor.getChildCount()]));
       }
 
-      // if this is the loop recorded in jumpToTop or jumpToOutside, then generate if-break node
+      // if this is the loop recorded in jumpToTop, then generate if-break node
       List<CAstNode> jumpList = new ArrayList<>();
       if (jumpToTop.keySet().stream()
-          .anyMatch(breaker -> jumpToTop.get(breaker).contains(currentLoop))) {
+          .anyMatch(
+              breaker ->
+                  jumpToTop.get(breaker).contains(currentLoop)
+                      // It should not be the last one which is the inner most loop
+                      && !jumpToTop
+                          .get(breaker)
+                          .get(jumpToTop.get(breaker).size() - 1)
+                          .equals(currentLoop))) {
         //          || jumpToOutside.keySet().stream()
         //              .anyMatch(breaker -> jumpToOutside.get(breaker).contains(currentLoop))) {
         CAstNode ifCont =
@@ -2633,10 +2640,8 @@ public abstract class ToSource {
                 notTakenBlock.add(ast.makeNode(CAstNode.BREAK));
               }
 
-              // If a loop breaker is found in jumpToTop or jumpToOutside, set ct_loop_jump=true
-              if ((jumpToTop.containsKey(branchBB)
-                  && jumpToTop.get(branchBB).stream()
-                      .anyMatch(ll -> ll.containsNestedLoop(loop)))) {
+              // If a loop breaker is found in jumpToTop, set ct_loop_jump=true
+              if ((jumpToTop.containsKey(branchBB) && jumpToTop.get(branchBB).contains(loop))) {
                 //                  || (jumpToOutside.containsKey(branchBB)
                 //                      && jumpToOutside.get(branchBB).stream()
                 //                          .anyMatch(ll -> ll.containsNestedLoop(loop)))) {
