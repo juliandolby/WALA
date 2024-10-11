@@ -2266,9 +2266,7 @@ public abstract class ToSource {
           ISSABasicBlock bb = cfg.getBlockForInstruction(inst.iIndex());
           ISSABasicBlock next = cfg.getNormalSuccessors(bb).iterator().next();
 
-          if (loop != null
-              && loops.containsKey(next)
-              && loops.get(next).isLastBlockOfPartInTheMiddle(bb)) {
+          if (loop != null && loop.getLoopHeader().equals(next) && !loop.isLastBlock(bb)) {
             // if there are more than one loop part, only last one should not generate CONTINUE,
             // other loop part's last block should generate CONTINUE
             node = ast.makeNode(CAstNode.CONTINUE);
