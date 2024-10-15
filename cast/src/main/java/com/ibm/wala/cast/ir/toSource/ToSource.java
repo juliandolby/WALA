@@ -1510,11 +1510,11 @@ public abstract class ToSource {
     public Pair<CAstNode, List<CAstNode>> toLoopCAst(
         List<List<SSAInstruction>> chunks,
         List<CAstNode> decls,
-        List<Loop> parentLoops,
+        List<Loop> currentLoops,
         List<CAstNode> elts) {
-      assert (parentLoops != null && parentLoops.size() > 0);
+      assert (currentLoops != null && currentLoops.size() > 0);
 
-      Loop currentLoop = parentLoops.get(parentLoops.size() - 1);
+      Loop currentLoop = currentLoops.get(currentLoops.size() - 1);
 
       // usually loop control is the last chunk passed in from the caller
       assert (chunks != null && chunks.size() > 0);
@@ -1530,7 +1530,7 @@ public abstract class ToSource {
               .orElse(null);
       assert condChunk != null;
 
-      createLoop(cfg, chunks, parentLoops, decls, elts, true);
+      createLoop(cfg, chunks, currentLoops, decls, elts, true);
 
       LoopType loopType = LoopHelper.getLoopType(cfg, ST, currentLoop);
 
@@ -1547,7 +1547,7 @@ public abstract class ToSource {
       CAstNode test;
       if (condChunkWithoutConditional.size() > 0) {
         test =
-            makeToCAst(condChunkWithoutConditional).processChunk(decls, packages, parentLoops).fst;
+            makeToCAst(condChunkWithoutConditional).processChunk(decls, packages, currentLoops).fst;
         if (CAstNode.DECL_STMT == test.getKind()) {
           test = test.getChild(test.getChildCount() - 1);
 
@@ -1604,7 +1604,7 @@ public abstract class ToSource {
       } else {
         // translate loop body after conditional
         RegionTreeNode lr = children.get(instruction).get(body);
-        condSuccessor = lr.toCAst(parentLoops);
+        condSuccessor = lr.toCAst(currentLoops);
       }
 
       if (LoopType.DOWHILE.equals(loopType)) {
@@ -1625,7 +1625,7 @@ public abstract class ToSource {
         }
         if (loopControlElse != null) {
           RegionTreeNode rt = children.get(instruction).get(loopControlElse);
-          elseNodes.addAll(rt.toCAst(parentLoops).getChildren());
+          elseNodes.addAll(rt.toCAst(currentLoops).getChildren());
 
           if (elseNodes.size() > 0) {
             if (elseNodes.get(elseNodes.size() - 1).getKind() == CAstNode.BLOCK_STMT
@@ -1819,9 +1819,20 @@ public abstract class ToSource {
         // skip the case when 'after' block is moved into loop body
         if (!after.equals(loopControlElse)) {
           RegionTreeNode ar = children.get(instruction).get(after);
-          CAstNode afterNode = ar.toCAst(parentLoops);
+          // TODO use parent loops, need to check if it is correct
+          CAstNode afterNode = ar.toCAst(currentLoops.subList(0, currentLoops.size() - 1));
 
-          loopNode = ast.makeNode(CAstNode.BLOCK_STMT, loopNode, afterNode);
+          //          loopNode = ast.makeNode(CAstNode.BLOCK_STMT, loopNode, afterNode);
+
+          if (CAstNode.BLOCK_STMT == afterNode.getKind() && afterNode.getChildCount() > 0) {
+            loopNode =
+                ast.makeNode(
+                    CAstNode.BLOCK_STMT,
+                    loopNode,
+                    afterNode.getChildren().toArray(new CAstNode[afterNode.getChildCount()]));
+          } else {
+            loopNode = ast.makeNode(CAstNode.BLOCK_STMT, loopNode, afterNode);
+          }
         }
       } else {
         // still need to wrap into a block
@@ -1833,7 +1844,7 @@ public abstract class ToSource {
           .forEach(
               c -> {
                 Pair<CAstNode, List<CAstNode>> stuff =
-                    makeToCAst(c).processChunk(decls, packages, parentLoops);
+                    makeToCAst(c).processChunk(decls, packages, currentLoops);
                 elts.add(stuff.fst);
                 decls.addAll(stuff.snd);
               });
