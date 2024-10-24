@@ -93,6 +93,16 @@ public class Loop {
             .flatMap(Collection::stream)
             .distinct()
             .collect(Collectors.toSet());
+    if (nestedLoops != null && nestedLoops.size() > 0) {
+      breakers.addAll(
+          nestedLoops.stream()
+              .map(loop -> loop.getLoopBreakersExits())
+              .flatMap(Collection::stream)
+              .distinct()
+              .collect(Collectors.toSet()));
+    }
+
+    // remove the breakers that's no longer as breaker
     Set<Pair<ISSABasicBlock, ISSABasicBlock>> shouldBeRemoved = HashSetFactory.make();
     breakers.forEach(
         pair -> {
@@ -195,5 +205,10 @@ public class Loop {
       //              .equals(lastBlock);
     }
     return false;
+  }
+
+  public Set<Pair<ISSABasicBlock, ISSABasicBlock>> getLoopBreakersExits() {
+    assert (loopBreakers != null);
+    return loopBreakers;
   }
 }
