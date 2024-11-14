@@ -51,7 +51,7 @@ JavaVersion.current().let {
 
 group = name
 
-version = "1.0.0-rc1"
+version = "1.0.0"
 
 // version of Eclipse JARs to use for Eclipse-integrated WALA components.
 val eclipseVersion: EclipseRelease by extra {
