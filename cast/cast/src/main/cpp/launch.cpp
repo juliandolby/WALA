@@ -1,4 +1,6 @@
+#ifndef _MSC_VER
 typedef long long  __int64;
+#endif
 
 #include <cstdio>
  #include <jni.h>

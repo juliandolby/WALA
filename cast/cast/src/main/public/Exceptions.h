@@ -24,7 +24,9 @@
  * returned.
  */
 
+#ifndef _MSC_VER
 typedef long long  __int64;
+#endif
 
 #include "dll_export.h"
 #include <jni.h>

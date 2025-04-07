@@ -1,7 +1,9 @@
 #ifndef _CAST_WRAPPER_H
 #define _CAST_WRAPPER_H
 
+#ifndef _MSC_VER
 typedef long long  __int64;
+#endif
 
 #include <list>
 #include "dll_export.h"
