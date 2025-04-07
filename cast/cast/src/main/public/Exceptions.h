@@ -24,6 +24,8 @@
  * returned.
  */
 
+typedef long long  __int64;
+
 #include "dll_export.h"
 #include <jni.h>
 

@@ -1,6 +1,8 @@
 #ifndef _CAST_WRAPPER_H
 #define _CAST_WRAPPER_H
 
+typedef long long  __int64;
+
 #include <list>
 #include "dll_export.h"
 #include "jni.h"

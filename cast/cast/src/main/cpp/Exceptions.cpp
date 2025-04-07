@@ -1,3 +1,5 @@
+typedef long long  __int64;
+
 #include <csetjmp>
 #include <jni.h>
 #include <sstream>

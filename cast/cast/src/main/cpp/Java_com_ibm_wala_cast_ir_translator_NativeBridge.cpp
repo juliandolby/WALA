@@ -1,3 +1,4 @@
+typedef long long  __int64;
 
 #include <jni.h>
 

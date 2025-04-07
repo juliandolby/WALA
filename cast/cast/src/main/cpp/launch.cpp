@@ -1,3 +1,5 @@
+typedef long long  __int64;
+
 #include <cstdio>
  #include <jni.h>
 #include <string>

@@ -1,3 +1,5 @@
+typedef long long  __int64;
+
 #include <CAstWrapper.h>
 #include <cstring>
 #include <iterator>
