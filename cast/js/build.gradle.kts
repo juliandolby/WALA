@@ -2,10 +2,7 @@ import com.ibm.wala.gradle.CreatePackageList
 import com.ibm.wala.gradle.VerifiedDownload
 import java.net.URI
 
-plugins {
-  id("com.ibm.wala.gradle.java")
-  id("com.ibm.wala.gradle.publishing")
-}
+plugins { id("com.ibm.wala.gradle.java") }
 
 dependencies {
   api(libs.jericho.html)

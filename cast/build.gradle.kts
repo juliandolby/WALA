@@ -2,10 +2,7 @@ import org.gradle.api.attributes.Usage.NATIVE_RUNTIME
 import org.gradle.api.attributes.Usage.USAGE_ATTRIBUTE
 import org.gradle.language.cpp.CppBinary.OPTIMIZED_ATTRIBUTE
 
-plugins {
-  id("com.ibm.wala.gradle.java")
-  id("com.ibm.wala.gradle.publishing")
-}
+plugins { id("com.ibm.wala.gradle.java") }
 
 eclipse.project.natures("org.eclipse.pde.PluginNature")
 

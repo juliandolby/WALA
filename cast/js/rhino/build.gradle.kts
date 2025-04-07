@@ -1,9 +1,6 @@
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 
-plugins {
-  id("com.ibm.wala.gradle.java")
-  id("com.ibm.wala.gradle.publishing")
-}
+plugins { id("com.ibm.wala.gradle.java") }
 
 val extraTestResources: Configuration by configurations.creating { isCanBeConsumed = false }
 

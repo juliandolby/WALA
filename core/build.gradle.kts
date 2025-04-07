@@ -7,10 +7,7 @@ import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.gradle.plugins.ide.eclipse.model.AbstractClasspathEntry
 import org.gradle.plugins.ide.eclipse.model.Classpath
 
-plugins {
-  id("com.ibm.wala.gradle.java")
-  id("com.ibm.wala.gradle.publishing")
-}
+plugins { id("com.ibm.wala.gradle.java") }
 
 eclipse {
   project.natures("org.eclipse.pde.PluginNature")

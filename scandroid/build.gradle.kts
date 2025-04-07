@@ -1,7 +1,4 @@
-plugins {
-  id("com.ibm.wala.gradle.java")
-  id("com.ibm.wala.gradle.publishing")
-}
+plugins { id("com.ibm.wala.gradle.java") }
 
 dependencies {
   api(projects.core)
