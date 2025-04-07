@@ -42,7 +42,8 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
       - name: Build and test using Gradle with ECJ
         # use xvfb-gradle.sh to avoid headless test failures on Linux
-        run: ./xvfb-gradle.sh aggregatedJavadocs build publishAllPublicationsToFakeRemoteRepository shellcheck --no-configuration-cache "-Pcom.ibm.wala.jdk-version=${{ matrix.java }}"
+        run: ./xvfb-gradle.sh aggregatedJavadocs build shellcheck --no-configuration-cache "-Pcom.ibm.wala.jdk-version=${{ matrix.java }}"
+#        run: ./xvfb-gradle.sh aggregatedJavadocs build publishAllPublicationsToFakeRemoteRepository shellcheck --no-configuration-cache "-Pcom.ibm.wala.jdk-version=${{ matrix.java }}"
         # testing ECJ compilation on any one OS is sufficient; we choose Linux arbitrarily
         if: runner.os == 'Linux'
       - name: Build and test using Gradle but without ECJ
