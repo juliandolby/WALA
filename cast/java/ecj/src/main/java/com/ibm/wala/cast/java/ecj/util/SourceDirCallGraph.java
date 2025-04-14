@@ -25,8 +25,10 @@ import com.ibm.wala.ipa.cha.IClassHierarchy;
 import com.ibm.wala.properties.WalaProperties;
 import com.ibm.wala.ssa.SymbolTable;
 import com.ibm.wala.types.ClassLoaderReference;
+import com.ibm.wala.util.config.FileOfClasses;
 import com.ibm.wala.util.io.CommandLine;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.Properties;
 import java.util.jar.JarFile;
@@ -76,9 +78,16 @@ public class SourceDirCallGraph {
           IOException {
     long start = System.currentTimeMillis();
     Properties p = CommandLine.parse(args);
+
     String sourceDir = p.getProperty("sourceDir");
     String mainClass = p.getProperty("mainClass");
+    String exclusions = p.containsKey("exclusions") ? p.getProperty("exclusions") : null;
+
     AnalysisScope scope = new JavaSourceAnalysisScope();
+    if (exclusions != null) {
+      scope.setExclusions(new FileOfClasses(new FileInputStream(exclusions)));
+    }
+
     // add standard libraries to scope
     String[] stdlibs = WalaProperties.getJ2SEJarFiles();
     for (String stdlib : stdlibs) {
