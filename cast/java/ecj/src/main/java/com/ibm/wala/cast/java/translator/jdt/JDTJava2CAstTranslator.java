@@ -3459,8 +3459,8 @@ public abstract class JDTJava2CAstTranslator<T extends Position> {
   }
 
   private CAstNode visit(ForStatement n, WalkContext context) {
-    ASTNode breakTarget = makeBreakOrContinueTarget(n, "breakLabel" + n.getStartPosition());
-    ASTNode continueTarget = makeBreakOrContinueTarget(n, "continueLabel" + n.getStartPosition());
+    ASTNode breakTarget = makeBreakOrContinueTarget(n, "brkLabel" + n.getStartPosition());
+    ASTNode continueTarget = makeBreakOrContinueTarget(n, "contLabel" + n.getStartPosition());
     String loopLabel = context.getLabelMap().get(n);
     WalkContext loopContext = new LoopContext(context, loopLabel, breakTarget, continueTarget);
 

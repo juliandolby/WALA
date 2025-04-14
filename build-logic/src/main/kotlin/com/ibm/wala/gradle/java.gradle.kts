@@ -48,19 +48,19 @@ dependencies {
 
 tasks.withType<JavaCompile>().configureEach {
   // Always compile with a recent JDK version, to get the latest bug fixes in the compiler toolchain
-  javaCompiler = javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(23) }
+  javaCompiler = javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(24) }
   // Generate JDK 11 bytecodes; that is the minimum version supported by WALA
   options.release = 11
   options.errorprone {
     // don't run warning-level checks by default as they add too much noise to build output
-    // NOTE: until https://github.com/google/error-prone/pull/3462 makes it to a release,
-    // we need to customize the level of at least one specific check to make this flag work
     disableAllWarnings = true
     // warning-level checks upgraded to error, since we've fixed all the warnings
     error("UnnecessaryParentheses")
     error("UnusedVariable")
     error("JdkObsolete")
     error("AnnotationPosition")
+    error("AssertEqualsArgumentOrderChecker")
+    error("ArgumentSelectionDefectChecker")
     // checks we do not intend to try to fix in the near-term:
     // Just too many of these; proper Javadoc would be a great long-term goal
     disable("MissingSummary")
@@ -119,6 +119,7 @@ tasks.withType<JavaCompile>().configureEach {
   options.run {
     encoding = "UTF-8"
     compilerArgs.add("-Werror")
+    compilerArgs.add("-parameters")
   }
 }
 
@@ -159,4 +160,9 @@ spotless {
             .get()
             .toString())
   }
+}
+
+// Google Java Format versions 1.25.0 and higher require Java 17
+tasks.named("spotlessJava") {
+  onlyIf { JavaVersion.current().isCompatibleWith(JavaVersion.VERSION_17) }
 }
