@@ -1282,9 +1282,7 @@ public abstract class ToSource {
                               // otherwise return null then the instructions will be
                               // translated
                               // into several lines and might be placed in different places
-                              LoopHelper.shouldMergeTest(cfg, ST, inst, loops, jumpToTop)
-                                  ? inst
-                                  : null);
+                              LoopHelper.shouldMergeTest(cfg, ST, inst, loops) ? inst : null);
                       if (insts.isEmpty()) {
                         insts.add(inst);
                         chunks.insert(new ArrayList<>(insts));
@@ -1581,7 +1579,7 @@ public abstract class ToSource {
       createLoop(cfg, chunks, currentLoops, decls, elts, true);
 
       // find out the initial loop type
-      LoopType loopType = LoopHelper.getLoopType(cfg, ST, currentLoop, jumpToTop);
+      LoopType loopType = LoopHelper.getLoopType(cfg, ST, currentLoop);
 
       List<SSAInstruction> condChunkWithoutConditional =
           condChunk.stream()
@@ -1728,8 +1726,8 @@ public abstract class ToSource {
           loopType = LoopType.WHILE;
         } else {
           if (afterNodes.size() > 0) {
-            if (afterNodes.get(afterNodes.size() - 1).getKind() == CAstNode.BLOCK_STMT
-                && afterNodes.get(afterNodes.size() - 1).getChild(0).getKind() == CAstNode.BREAK) {
+            if (CAstHelper.endingWithBreak(afterNodes.get(afterNodes.size() - 1))
+                || CAstHelper.endingWithTermination(afterNodes.get(afterNodes.size() - 1))) {
               if (DEBUG)
                 System.err.println(
                     "afterNodes is end with break, no need to add break"); // TODO: need it for a
@@ -2065,8 +2063,7 @@ public abstract class ToSource {
           chunkInsts -> {
             // Ignore goto chunks for now
             if (!LoopHelper.gotoChunk(chunkInsts)) {
-              if (LoopHelper.shouldMoveAsLoopBody(
-                  cfg, ST, chunkInsts, loops, currentLoops, jumpToTop)) {
+              if (LoopHelper.shouldMoveAsLoopBody(cfg, ST, chunkInsts, loops, currentLoops)) {
                 // move to loop chunks
                 loopChunks.add(chunkInsts);
               } else {
@@ -2371,8 +2368,9 @@ public abstract class ToSource {
 
           if (loop != null
               && loop.getLoopHeader().equals(cfg.getNormalSuccessors(bb).iterator().next())
-              && !loop.isLastBlock(bb)) {
+              && LoopHelper.needsContinue(loop, bb, cfg)) {
             // if there are more than one loop part, only last one should not generate CONTINUE
+            // but sometimes the last block might be generated in the middle of the loop
             node = ast.makeNode(CAstNode.CONTINUE);
           } else if (loop != null && loop.getLoopExits().containsAll(cfg.getNormalSuccessors(bb))) {
             node = ast.makeNode(CAstNode.BLOCK_STMT, ast.makeNode(CAstNode.BREAK));
@@ -2855,8 +2853,9 @@ public abstract class ToSource {
             else takenBlock.add(0, ast.makeConstant(thenPhrase));
           }
           if (elsePhrase != null && elsePhrase.length() > 0) {
-            if (CAstHelper.isLeadingNegation(test)) takenBlock.add(0, ast.makeConstant(elsePhrase));
-            else notTakenBlock.add(0, ast.makeConstant(elsePhrase));
+            if (CAstHelper.isLeadingNegation(test)) {
+              if (takenBlock != null) takenBlock.add(0, ast.makeConstant(elsePhrase));
+            } else notTakenBlock.add(0, ast.makeConstant(elsePhrase));
           }
 
           CAstNode notTakenStmt =
