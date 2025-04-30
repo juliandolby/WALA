@@ -47,18 +47,25 @@ public class ECJSourceLoaderImpl extends JavaSourceLoaderImpl {
   protected final boolean dump;
 
   public ECJSourceLoaderImpl(
-      ClassLoaderReference loaderRef, IClassLoader parent, IClassHierarchy cha) {
-    this(loaderRef, parent, cha, false);
+      ClassLoaderReference loaderRef,
+      IClassLoader parent,
+      IClassHierarchy cha,
+      boolean forToSource) {
+    this(loaderRef, parent, cha, false, forToSource);
   }
 
   public ECJSourceLoaderImpl(
-      ClassLoaderReference loaderRef, IClassLoader parent, IClassHierarchy cha, boolean dump) {
-    super(loaderRef, parent, cha);
+      ClassLoaderReference loaderRef,
+      IClassLoader parent,
+      IClassHierarchy cha,
+      boolean dump,
+      boolean forToSource) {
+    super(loaderRef, parent, cha, forToSource);
     this.dump = dump;
   }
 
   @Override
   protected SourceModuleTranslator getTranslator() {
-    return new ECJSourceModuleTranslator(cha.getScope(), this, dump);
+    return new ECJSourceModuleTranslator(cha.getScope(), this, dump, forToSource);
   }
 }

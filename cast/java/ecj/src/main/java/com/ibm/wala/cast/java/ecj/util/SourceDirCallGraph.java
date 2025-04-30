@@ -67,8 +67,8 @@ public class SourceDirCallGraph {
             });
   }
 
-  protected ClassLoaderFactory getLoaderFactory(AnalysisScope scope) {
-    return new ECJClassLoaderFactory(scope.getExclusions());
+  protected ClassLoaderFactory getLoaderFactory(AnalysisScope scope, boolean forToSource) {
+    return new ECJClassLoaderFactory(scope.getExclusions(), forToSource);
   }
 
   public void doit(String[] args, Processor processor)
@@ -81,7 +81,9 @@ public class SourceDirCallGraph {
 
     String sourceDir = p.getProperty("sourceDir");
     String mainClass = p.getProperty("mainClass");
-    String exclusions = p.containsKey("exclusions") ? p.getProperty("exclusions") : null;
+    String exclusions = p.getProperty("exclusions", null);
+    boolean forToSource =
+        p.containsKey("toSource") ? Boolean.valueOf(p.getProperty("toSource")) : false;
 
     AnalysisScope scope = new JavaSourceAnalysisScope();
     if (exclusions != null) {
@@ -105,7 +107,7 @@ public class SourceDirCallGraph {
     }
 
     // build the class hierarchy
-    IClassHierarchy cha = ClassHierarchyFactory.make(scope, getLoaderFactory(scope));
+    IClassHierarchy cha = ClassHierarchyFactory.make(scope, getLoaderFactory(scope, forToSource));
     System.out.println(cha.getNumberOfClasses() + " classes");
     System.out.println(Warnings.asString());
     Warnings.clear();

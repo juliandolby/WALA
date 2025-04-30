@@ -87,8 +87,9 @@ public class ECJSourceModuleTranslator implements SourceModuleTranslator {
         CompilationUnit astRoot,
         String fullPath,
         boolean replicateForDoLoops,
-        boolean dump) {
-      super(sourceLoader, astRoot, fullPath, replicateForDoLoops, dump);
+        boolean dump,
+        boolean forToSource) {
+      super(sourceLoader, astRoot, fullPath, replicateForDoLoops, dump, forToSource);
     }
 
     @Override
@@ -176,15 +177,18 @@ public class ECJSourceModuleTranslator implements SourceModuleTranslator {
   private final String[] sources;
   private final String[] libs;
   private final SetOfClasses exclusions;
+  private boolean forToSource;
 
-  public ECJSourceModuleTranslator(AnalysisScope scope, ECJSourceLoaderImpl sourceLoader) {
-    this(scope, sourceLoader, false);
+  public ECJSourceModuleTranslator(
+      AnalysisScope scope, ECJSourceLoaderImpl sourceLoader, boolean forToSource) {
+    this(scope, sourceLoader, false, forToSource);
   }
 
   public ECJSourceModuleTranslator(
-      AnalysisScope scope, ECJSourceLoaderImpl sourceLoader, boolean dump) {
+      AnalysisScope scope, ECJSourceLoaderImpl sourceLoader, boolean dump, boolean forToSource) {
     this.sourceLoader = sourceLoader;
     this.dump = dump;
+    this.forToSource = forToSource;
 
     Pair<String[], String[]> paths = computeClassPath(scope);
     sources = paths.fst;
@@ -264,6 +268,7 @@ public class ECJSourceModuleTranslator implements SourceModuleTranslator {
 
   protected JDTJava2CAstTranslator<Position> makeCAstTranslator(
       CompilationUnit cu, String fullPath) {
-    return new ECJJavaToCAstTranslator(sourceLoader.getReference(), cu, fullPath, false, dump);
+    return new ECJJavaToCAstTranslator(
+        sourceLoader.getReference(), cu, fullPath, false, dump, forToSource);
   }
 }

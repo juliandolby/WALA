@@ -12,9 +12,11 @@ import com.ibm.wala.util.config.SetOfClasses;
 import java.io.IOException;
 
 public class ECJClassLoaderFactory extends ClassLoaderFactoryImpl {
+  private final boolean forToSource;
 
-  public ECJClassLoaderFactory(SetOfClasses exclusions) {
+  public ECJClassLoaderFactory(SetOfClasses exclusions, boolean forToSource) {
     super(exclusions);
+    this.forToSource = forToSource;
   }
 
   // TODO remove code duplication with JDTClassLoaderFactory
@@ -37,6 +39,6 @@ public class ECJClassLoaderFactory extends ClassLoaderFactoryImpl {
 
   protected JavaSourceLoaderImpl makeSourceLoader(
       ClassLoaderReference classLoaderReference, IClassHierarchy cha, IClassLoader parent) {
-    return new ECJSourceLoaderImpl(classLoaderReference, parent, cha, false);
+    return new ECJSourceLoaderImpl(classLoaderReference, parent, cha, forToSource);
   }
 }

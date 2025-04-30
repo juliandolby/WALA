@@ -2,6 +2,7 @@ package com.ibm.wala.cast.java.toSource;
 
 import com.ibm.wala.analysis.typeInference.TypeInference;
 import com.ibm.wala.cast.ir.ssa.AstIRFactory;
+import com.ibm.wala.cast.ir.toSource.Loop;
 import com.ibm.wala.cast.ir.toSource.ToSource;
 import com.ibm.wala.cast.java.analysis.typeInference.AstJavaTypeInference;
 import com.ibm.wala.cast.java.ssa.AstJavaInstructionVisitor;
@@ -87,6 +88,17 @@ public class ToSourceFromJava extends ToSource {
             super(root, c, chunk, parentDecls, packages, children, extraHeaderCode);
           }
 
+          public JavaVisitor(
+              SSAInstruction root,
+              CodeGenerationContext c,
+              List<SSAInstruction> chunk2,
+              List<CAstNode> parentDecls,
+              Map<String, Set<String>> packages,
+              Map<SSAInstruction, Map<ISSABasicBlock, RegionTreeNode>> children,
+              List<Loop> currentLoops) {
+            super(root, c, chunk2, parentDecls, packages, children, currentLoops);
+          }
+
           @Override
           public void visitJavaInvoke(AstJavaInvokeInstruction instruction) {
             visitAbstractInvoke(instruction);
@@ -108,6 +120,17 @@ public class ToSourceFromJava extends ToSource {
             Map<String, Set<String>> packages,
             boolean extraHeaderCode) {
           return new JavaVisitor(root, c, chunk, parentDecls, packages, children, extraHeaderCode);
+        }
+
+        @Override
+        protected Visitor makeVisitor(
+            SSAInstruction root,
+            CodeGenerationContext c,
+            List<SSAInstruction> chunk2,
+            List<CAstNode> parentDecls,
+            Map<String, Set<String>> packages,
+            List<Loop> currentLoops) {
+          return new JavaVisitor(root, c, chunk2, parentDecls, packages, children, currentLoops);
         }
       };
     }

@@ -221,6 +221,8 @@ public abstract class JDTJava2CAstTranslator<T extends Position> {
 
   protected final CompilationUnit cu;
 
+  private boolean forToSource;
+
   //
   // COMPILATION UNITS & TYPES
   //
@@ -229,8 +231,9 @@ public abstract class JDTJava2CAstTranslator<T extends Position> {
       ClassLoaderReference sourceLoader,
       CompilationUnit astRoot,
       String fullPath,
-      boolean replicateForDoLoops) {
-    this(sourceLoader, astRoot, fullPath, replicateForDoLoops, false);
+      boolean replicateForDoLoops,
+      boolean forToSource) {
+    this(sourceLoader, astRoot, fullPath, replicateForDoLoops, false, forToSource);
   }
 
   public JDTJava2CAstTranslator(
@@ -238,7 +241,8 @@ public abstract class JDTJava2CAstTranslator<T extends Position> {
       CompilationUnit astRoot,
       String fullPath,
       boolean replicateForDoLoops,
-      boolean dump) {
+      boolean dump,
+      boolean forToSource) {
     fDivByZeroExcType = FakeExceptionTypeBinding.arithmetic;
     fNullPointerExcType = FakeExceptionTypeBinding.nullPointer;
     fClassCastExcType = FakeExceptionTypeBinding.classCast;
@@ -256,6 +260,8 @@ public abstract class JDTJava2CAstTranslator<T extends Position> {
 
     this.dump = dump;
 
+    this.forToSource = forToSource;
+
     // FIXME: we might need one AST (-> "Object" class) for all files.
     fIdentityMapper = new JDTIdentityMapper(fSourceLoader, ast);
     fTypeDict = new JDTTypeDictionary(ast, fIdentityMapper);
@@ -270,7 +276,7 @@ public abstract class JDTJava2CAstTranslator<T extends Position> {
 
     for (AbstractTypeDeclaration decl : (Iterable<AbstractTypeDeclaration>) cu.types()) {
       // can be of type AnnotationTypeDeclaration, EnumDeclaration, TypeDeclaration
-      declEntities.add(visit(decl, new RootContext()));
+      declEntities.add(visit(decl, new RootContext(forToSource)));
     }
 
     if (dump) {
@@ -1157,7 +1163,11 @@ public abstract class JDTJava2CAstTranslator<T extends Position> {
 
     @Override
     public CAstNode getAST() {
-      return fAst;
+      if (forToSource) {
+        return fFactory.makeNode(CAstNode.IF_STMT, fFactory.makeConstant(true), fAst);
+      } else {
+        return fAst;
+      }
     }
 
     @Override
@@ -4036,6 +4046,8 @@ public abstract class JDTJava2CAstTranslator<T extends Position> {
     Map<ASTNode, String> getLabelMap();
 
     boolean needLValue();
+
+    boolean forToSource();
   }
 
   /**
@@ -4048,6 +4060,11 @@ public abstract class JDTJava2CAstTranslator<T extends Position> {
 
     public DelegatingContext(WalkContext parent) {
       super(parent);
+    }
+
+    @Override
+    public boolean forToSource() {
+      return parent.forToSource();
     }
 
     @Override
@@ -4071,6 +4088,17 @@ public abstract class JDTJava2CAstTranslator<T extends Position> {
    */
   public static class RootContext extends TranslatorToCAst.RootContext<WalkContext, ASTNode>
       implements WalkContext {
+    private final boolean forToSource;
+
+    RootContext(boolean forToSource) {
+      this.forToSource = forToSource;
+    }
+
+    @Override
+    public boolean forToSource() {
+      return forToSource;
+    }
+
     @Override
     public Collection<Pair<ITypeBinding, Object>> getCatchTargets(ITypeBinding type) {
       Assertions.UNREACHABLE("RootContext.getCatchTargets()");

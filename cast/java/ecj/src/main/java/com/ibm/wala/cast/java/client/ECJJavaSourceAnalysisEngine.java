@@ -18,6 +18,6 @@ public class ECJJavaSourceAnalysisEngine extends JavaSourceAnalysisEngine {
 
   @Override
   protected ClassLoaderFactory getClassLoaderFactory(SetOfClasses exclusions) {
-    return new ECJClassLoaderFactory(exclusions);
+    return new ECJClassLoaderFactory(exclusions, false);
   }
 }

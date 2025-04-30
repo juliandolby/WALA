@@ -53,7 +53,7 @@ public class JDTSourceLoaderImpl extends JavaSourceLoaderImpl {
 
   public JDTSourceLoaderImpl(
       ClassLoaderReference loaderRef, IClassLoader parent, IClassHierarchy cha, boolean dump) {
-    super(loaderRef, parent, cha);
+    super(loaderRef, parent, cha, false);
     this.dump = dump;
   }
 

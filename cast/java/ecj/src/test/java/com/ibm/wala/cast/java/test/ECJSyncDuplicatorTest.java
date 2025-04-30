@@ -64,21 +64,21 @@ public class ECJSyncDuplicatorTest extends SyncDuplicatorTests {
 
           @Override
           protected ClassLoaderFactory getClassLoaderFactory(SetOfClasses exclusions) {
-            return new ECJClassLoaderFactory(exclusions) {
+            return new ECJClassLoaderFactory(exclusions, false) {
               @Override
               protected ECJSourceLoaderImpl makeSourceLoader(
                   ClassLoaderReference classLoaderReference,
                   IClassHierarchy cha,
                   IClassLoader parent) {
-                return new ECJSourceLoaderImpl(classLoaderReference, parent, cha) {
+                return new ECJSourceLoaderImpl(classLoaderReference, parent, cha, false) {
                   @Override
                   protected SourceModuleTranslator getTranslator() {
-                    return new ECJSourceModuleTranslator(cha.getScope(), this) {
+                    return new ECJSourceModuleTranslator(cha.getScope(), this, false) {
                       @Override
                       protected JDTJava2CAstTranslator<Position> makeCAstTranslator(
                           CompilationUnit astRoot, String fullPath) {
                         return new JDTJava2CAstTranslator<>(
-                            sourceLoader.getReference(), astRoot, fullPath, true) {
+                            sourceLoader.getReference(), astRoot, fullPath, true, false) {
                           @Override
                           public CAstEntity translateToCAst() {
                             CAstEntity ast = super.translateToCAst();

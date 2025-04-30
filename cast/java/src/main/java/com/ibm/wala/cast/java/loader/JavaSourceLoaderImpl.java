@@ -85,6 +85,7 @@ public abstract class JavaSourceLoaderImpl extends ClassLoaderImpl {
   /* BEGIN Custom change: Common superclass is optional */
   private final boolean
       existsCommonSuperclass; // extension to deal with X10 that has no common superclass
+  protected boolean forToSource;
 
   /* END Custom change: Common superclass is optional */
 
@@ -575,20 +576,25 @@ public abstract class JavaSourceLoaderImpl extends ClassLoaderImpl {
       boolean existsCommonSuperClass,
       ClassLoaderReference loaderRef,
       IClassLoader parent,
-      IClassHierarchy cha) {
+      IClassHierarchy cha,
+      boolean forToSource) {
     super(
         loaderRef,
         cha.getScope().getArrayClassLoader(),
         parent,
         cha.getScope().getExclusions(),
         cha);
+    this.forToSource = forToSource;
     this.existsCommonSuperclass = existsCommonSuperClass;
   }
 
   public JavaSourceLoaderImpl(
-      ClassLoaderReference loaderRef, IClassLoader parent, IClassHierarchy cha) {
+      ClassLoaderReference loaderRef,
+      IClassLoader parent,
+      IClassHierarchy cha,
+      boolean forToSource) {
     // standard case: we have a common super class
-    this(true, loaderRef, parent, cha);
+    this(true, loaderRef, parent, cha, forToSource);
   }
 
   /* END Custom change: Common superclass is optional */
