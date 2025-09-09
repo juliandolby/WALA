@@ -77,7 +77,19 @@ public class CAstHelper {
     }
 
     if (isConditionalStatement(newTest)) {
-      result.add(ast.makeNode(CAstNode.IF_STMT, newTest, thenBranch, elseBranch));
+      if (elseBranch.getKind() == CAstNode.BLOCK_STMT
+          && elseBranch.getChildCount() == 1
+          && elseBranch.getChild(0).getKind() == CAstNode.IF_STMT
+          && isConditionalStatement(elseBranch.getChild(0).getChild(0))
+          && newTest
+              .getChild(0)
+              .getValue()
+              .toString()
+              .equals(elseBranch.getChild(0).getChild(0).getChild(0).getValue().toString())) {
+        // For some conditional statements, a list of IF CAst nodes should be created
+        result.add(ast.makeNode(CAstNode.IF_STMT, newTest, thenBranch));
+        result.add(elseBranch.getChild(0));
+      } else result.add(ast.makeNode(CAstNode.IF_STMT, newTest, thenBranch, elseBranch));
     } else {
       // find common ending for both if branches
       List<CAstNode> thenBranchList =
