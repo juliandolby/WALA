@@ -914,7 +914,7 @@ public abstract class ToSource {
                       if (isBackEdge.test(p, n)) {
                         if (DEBUG) System.err.println("back:" + p + " --> " + n);
 
-                        LoopPart part = new LoopPart();
+                        LoopPart<ISSABasicBlock> part = new LoopPart<>();
 
                         Set<Pair<ISSABasicBlock, ISSABasicBlock>> loopBreakers =
                             HashSetFactory.make();
