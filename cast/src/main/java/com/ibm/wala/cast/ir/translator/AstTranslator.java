@@ -2642,10 +2642,10 @@ public abstract class AstTranslator extends CAstVisitor<AstTranslator.WalkContex
     Scope getGlobalScope();
   }
 
-  private abstract class DelegatingContext implements WalkContext {
+  public abstract class DelegatingContext implements WalkContext {
     private final WalkContext parent;
 
-    DelegatingContext(WalkContext parent) {
+    protected DelegatingContext(WalkContext parent) {
       this.parent = parent;
     }
 
