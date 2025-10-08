@@ -14,7 +14,7 @@ public class Loop {
 
   private ISSABasicBlock loopHeader;
 
-  private Set<LoopPart> parts;
+  private Set<LoopPart<ISSABasicBlock>> parts;
 
   private Set<Loop> nestedLoops = HashSetFactory.make();
 
@@ -46,7 +46,7 @@ public class Loop {
     return loopHeader;
   }
 
-  public void addLoopPart(LoopPart part) {
+  public void addLoopPart(LoopPart<ISSABasicBlock> part) {
     assert (part != null);
     assert loopHeader.equals(part.getLoopHeader());
     parts.add(part);

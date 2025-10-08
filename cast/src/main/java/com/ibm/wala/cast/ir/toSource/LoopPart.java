@@ -1,6 +1,5 @@
 package com.ibm.wala.cast.ir.toSource;
 
-import com.ibm.wala.ssa.ISSABasicBlock;
 import com.ibm.wala.util.collections.Pair;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -11,67 +10,72 @@ import java.util.stream.Collectors;
  *
  * <p>It's read from source AST
  */
-public class LoopPart {
+public class LoopPart<T> {
 
   /** Header of the loop */
-  private ISSABasicBlock loopHeader;
+  private T loopHeader;
 
   /**
    * The conditional branch which will control continue the loop or exit the loop It is usually the
    * first conditional branch in a loop (the last for do loop)
    */
-  private ISSABasicBlock loopControl;
+  private T loopControl;
 
   /** All blocks of the loop part */
-  private Set<ISSABasicBlock> allBlocks;
+  private Set<T> allBlocks;
 
   /**
    * The blocks that have one control-edge to a block in the loop and one that is not in the loop is
    * called loop breaker This set will contain loop control to ease development The second value in
    * the pair is loop exit Which is the successors of loop breakers that go out of the loop
    */
-  private Set<Pair<ISSABasicBlock, ISSABasicBlock>> loopBreakers;
+  private Set<Pair<T, T>> loopBreakers;
 
-  public ISSABasicBlock getLoopHeader() {
+  public T getLoopHeader() {
     return loopHeader;
   }
 
-  public void setLoopHeader(ISSABasicBlock loopHeader) {
+  public void setLoopHeader(T loopHeader) {
     this.loopHeader = loopHeader;
   }
 
-  public ISSABasicBlock getLoopControl() {
+  public T getLoopControl() {
     return loopControl;
   }
 
-  public void setLoopControl(ISSABasicBlock loopControl) {
+  public void setLoopControl(T loopControl) {
     this.loopControl = loopControl;
   }
 
-  public Set<ISSABasicBlock> getAllBlocks() {
+  public Set<T> getAllBlocks() {
     return allBlocks;
   }
 
-  public void setAllBlocks(Set<ISSABasicBlock> allBlocks) {
+  public void setAllBlocks(Set<T> allBlocks) {
     this.allBlocks = allBlocks;
   }
 
-  public Set<ISSABasicBlock> getLoopBreakers() {
+  public Set<T> getLoopBreakers() {
     assert (loopBreakers != null);
     return loopBreakers.stream().map(pair -> pair.fst).collect(Collectors.toSet());
   }
 
-  public Set<Pair<ISSABasicBlock, ISSABasicBlock>> getLoopBreakersExits() {
+  public Set<Pair<T, T>> getLoopBreakersExits() {
     assert (loopBreakers != null);
     return loopBreakers;
   }
 
-  public void setLoopBreakers(Set<Pair<ISSABasicBlock, ISSABasicBlock>> loopBreakers) {
+  public void setLoopBreakers(Set<Pair<T, T>> loopBreakers) {
     this.loopBreakers = loopBreakers;
   }
 
-  public Set<ISSABasicBlock> getLoopExits() {
+  public Set<T> getLoopExits() {
     assert (loopBreakers != null);
     return loopBreakers.stream().map(pair -> pair.snd).collect(Collectors.toSet());
+  }
+
+  @Override
+  public String toString() {
+    return "[LoopPart:" + loopHeader + ":" + allBlocks + "]";
   }
 }
