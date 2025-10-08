@@ -1597,7 +1597,10 @@ public abstract class ToSource {
       return Pair.make(ast.makeNode(CAstNode.BLOCK_STMT, loopNode), decls);
     }
 
-    private void createBodyCode(List<List<SSAInstruction>> chunks, List<CAstNode> decls, List<Loop> currentLoops,
+    private void createBodyCode(
+        List<List<SSAInstruction>> chunks,
+        List<CAstNode> decls,
+        List<Loop> currentLoops,
         List<CAstNode> elts) {
       for (int i = 0; i < chunks.size(); i++) {
         Pair<CAstNode, List<CAstNode>> stuff =
