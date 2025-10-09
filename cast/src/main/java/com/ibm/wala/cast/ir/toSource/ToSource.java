@@ -914,7 +914,7 @@ public abstract class ToSource {
                       if (isBackEdge.test(p, n)) {
                         if (DEBUG) System.err.println("back:" + p + " --> " + n);
 
-                        LoopPart part = new LoopPart();
+                        LoopPart<ISSABasicBlock> part = new LoopPart<>();
 
                         Set<Pair<ISSABasicBlock, ISSABasicBlock>> loopBreakers =
                             HashSetFactory.make();
@@ -1586,12 +1586,7 @@ public abstract class ToSource {
       // this is used for the case when loop control can not be found
       currentLoops.get(0).setHasLoopControl(false);
 
-      for (int i = 0; i < chunks.size(); i++) {
-        Pair<CAstNode, List<CAstNode>> stuff =
-            makeToCAst(chunks.get(i)).processChunk(decls, packages, currentLoops);
-        elts.add(stuff.fst);
-        decls.addAll(stuff.snd);
-      }
+      createBodyCode(chunks, decls, currentLoops, elts);
 
       CAstNode loopNode =
           ast.makeNode(
@@ -1600,6 +1595,19 @@ public abstract class ToSource {
               elts.size() == 1 ? elts.get(0) : ast.makeNode(CAstNode.BLOCK_STMT, elts),
               ast.makeConstant(false));
       return Pair.make(ast.makeNode(CAstNode.BLOCK_STMT, loopNode), decls);
+    }
+
+    private void createBodyCode(
+        List<List<SSAInstruction>> chunks,
+        List<CAstNode> decls,
+        List<Loop> currentLoops,
+        List<CAstNode> elts) {
+      for (int i = 0; i < chunks.size(); i++) {
+        Pair<CAstNode, List<CAstNode>> stuff =
+            makeToCAst(chunks.get(i)).processChunk(decls, packages, currentLoops);
+        elts.add(stuff.fst);
+        decls.addAll(stuff.snd);
+      }
     }
 
     public Pair<CAstNode, List<CAstNode>> toLoopCAst(
@@ -1624,9 +1632,13 @@ public abstract class ToSource {
               .findFirst()
               .orElse(null);
       if (condChunk == null) {
-        return toFlexibleLoopCAst(chunks, decls, currentLoops, elts);
+        if (chunks.stream().anyMatch(chunk -> LoopHelper.isConditional(chunk))) {
+          return toFlexibleLoopCAst(chunks, decls, currentLoops, elts);
+        } else {
+          createBodyCode(chunks, decls, currentLoops, elts);
+          return Pair.make(ast.makeNode(CAstNode.BLOCK_STMT, elts), decls);
+        }
       }
-
       // create nodes before loop control
       createLoop(cfg, chunks, currentLoops, decls, elts, true);
 
@@ -2167,7 +2179,7 @@ public abstract class ToSource {
                   .forEachRemaining(
                       i -> {
                         indent(sb, level + 1);
-                        sb.append(i.toString(ST)).append("\n");
+                        sb.append(i.iIndex() + ": " + i.toString(ST)).append("\n");
                         if (children.containsKey(i)) {
                           children
                               .get(i)

@@ -1081,6 +1081,10 @@ public abstract class AstTranslator extends CAstVisitor<AstTranslator.WalkContex
       bb.makeEntryBlock();
     }
 
+    public PreBasicBlock entry() {
+      return entryBlock;
+    }
+
     public void makeExitBlock(PreBasicBlock bb) {
       bb.makeExitBlock();
 

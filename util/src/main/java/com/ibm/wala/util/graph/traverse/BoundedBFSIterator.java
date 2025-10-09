@@ -167,9 +167,13 @@ public class BoundedBFSIterator<T> implements Iterator<T> {
   }
 
   /**
-   * @return the currentHops
+   * @return the distance from a root of the current node
    */
-  public int getCurrentHops() {
-    return currentHops;
+  public int getCurrentDepth() {
+    if (index == boundary[currentHops - 1]) {
+      return currentHops - 1;
+    } else {
+      return currentHops;
+    }
   }
 }

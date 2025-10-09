@@ -44,7 +44,7 @@ public class SSASwitchInstruction extends SSAInstruction {
 
   @Override
   public String toString(SymbolTable symbolTable) {
-    StringBuilder result = new StringBuilder(iIndex() + ": switch ");
+    StringBuilder result = new StringBuilder("switch ");
     result.append(getValueString(symbolTable, val));
     result.append(" [");
     for (int i = 0; i < casesAndLabels.length - 1; i++) {
