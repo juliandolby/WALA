@@ -45,6 +45,9 @@ public abstract class TestForInBodyExtraction {
 
     Pattern generatedFunNamePattern = Pattern.compile("\\.js(@\\d+)+");
     str = generatedFunNamePattern.matcher(str).replaceAll(".js@xxx");
+
+    Pattern generatedInternalPattern = Pattern.compile("__wala_int3rnal_end_label_[0-9]+");
+    str = generatedInternalPattern.matcher(str).replaceAll("__wala_int3rnal_end_label");
     return str;
   }
 

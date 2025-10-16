@@ -10,6 +10,7 @@
  */
 package com.ibm.wala.cast.js.html;
 
+import com.ibm.wala.cast.ir.translator.AstTranslator.IncipientCFG.PreBasicBlock;
 import com.ibm.wala.cast.ir.translator.TranslatorToIR;
 import com.ibm.wala.cast.js.loader.JavaScriptLoader;
 import com.ibm.wala.cast.js.loader.JavaScriptLoaderFactory;
