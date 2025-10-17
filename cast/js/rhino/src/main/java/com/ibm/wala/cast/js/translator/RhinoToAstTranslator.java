@@ -672,6 +672,7 @@ public class RhinoToAstTranslator implements TranslatorToCAst {
   }
 
   private class TranslatingVisitor extends TypedNodeVisitor<CAstNode, WalkContext> {
+    private boolean inForInLoop = false;
 
     @Override
     public CAstNode visit(AstNode node, WalkContext arg) {
@@ -880,6 +881,7 @@ public class RhinoToAstTranslator implements TranslatorToCAst {
 
     @Override
     public CAstNode visitForInLoop(ForInLoop node, WalkContext arg) {
+      inForInLoop = true;
       CAstNode loop;
       CAstNode get;
 
@@ -1128,6 +1130,7 @@ public class RhinoToAstTranslator implements TranslatorToCAst {
               Objects.requireNonNullElse(ctch, CAstControlFlowMap.EXCEPTION_TO_EXIT),
               JavaScriptTypes.ReferenceError);
 
+      inForInLoop = false;
       return loop;
     }
 
@@ -1402,11 +1405,19 @@ public class RhinoToAstTranslator implements TranslatorToCAst {
       return Ast.makeConstant(label);
     }
 
+    private int endLabel = 0;
+
     @Override
     public CAstNode visitLabeledStatement(LabeledStatement node, WalkContext arg) {
       ExpressionStatement ex = new ExpressionStatement();
       ex.setExpression(new EmptyExpression());
-      CAstNode exNode = visit(ex, arg);
+      CAstNode exNode =
+          !inForInLoop
+              ? Ast.makeNode(
+                  CAstNode.LABEL_STMT,
+                  Ast.makeConstant("__wala_int3rnal_end_label_" + endLabel++),
+                  visit(ex, arg))
+              : visit(ex, arg);
       arg.cfg().map(ex, exNode);
 
       WalkContext labelBodyContext = makeBreakContext(node, arg, ex);

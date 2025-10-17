@@ -26,6 +26,7 @@ import com.ibm.wala.cast.ir.ssa.CAstUnaryOp;
 import com.ibm.wala.cast.ir.ssa.EachElementGetInstruction;
 import com.ibm.wala.cast.ir.ssa.EachElementHasNextInstruction;
 import com.ibm.wala.cast.ir.ssa.SSAConversion;
+import com.ibm.wala.cast.ir.translator.AstTranslator.IncipientCFG.PreBasicBlock;
 import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.loader.AstMethod.DebuggingInformation;
 import com.ibm.wala.cast.loader.AstMethod.LexicalInformation;
@@ -77,13 +78,21 @@ import com.ibm.wala.types.TypeName;
 import com.ibm.wala.types.TypeReference;
 import com.ibm.wala.util.collections.HashMapFactory;
 import com.ibm.wala.util.collections.HashSetFactory;
+import com.ibm.wala.util.collections.Iterator2Collection;
 import com.ibm.wala.util.collections.Iterator2Iterable;
+import com.ibm.wala.util.collections.Iterator2List;
 import com.ibm.wala.util.collections.MapUtil;
 import com.ibm.wala.util.collections.Pair;
 import com.ibm.wala.util.debug.Assertions;
 import com.ibm.wala.util.debug.UnimplementedError;
+import com.ibm.wala.util.graph.Graph;
+import com.ibm.wala.util.graph.GraphSlicer;
+import com.ibm.wala.util.graph.GraphUtil;
+import com.ibm.wala.util.graph.impl.GraphInverter;
+import com.ibm.wala.util.graph.impl.SlowSparseNumberedGraph;
 import com.ibm.wala.util.graph.impl.SparseNumberedGraph;
 import com.ibm.wala.util.graph.traverse.DFS;
+import com.ibm.wala.util.graph.traverse.Topological;
 import com.ibm.wala.util.intset.IntSet;
 import com.ibm.wala.util.intset.IntSetUtil;
 import com.ibm.wala.util.intset.MutableIntSet;
@@ -103,7 +112,11 @@ import java.util.Map;
 import java.util.NavigableSet;
 import java.util.Set;
 import java.util.SortedSet;
+import java.util.function.BiPredicate;
 import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 /**
  * Common code to translate CAst to IR. Must be specialized by each language to handle semantics
@@ -687,112 +700,6 @@ public abstract class AstTranslator extends CAstVisitor<AstTranslator.WalkContex
 
   public static final boolean DEBUG_LEXICAL = DEBUG_ALL || false;
 
-  /**
-   * basic block implementation used in the CFGs constructed during the IR-generating AST traversal
-   */
-  protected static final class PreBasicBlock implements IBasicBlock<SSAInstruction> {
-    private static final int NORMAL = 0;
-
-    private static final int HANDLER = 1;
-
-    private static final int ENTRY = 2;
-
-    private static final int EXIT = 3;
-
-    private int kind = NORMAL;
-
-    private int number = -1;
-
-    private int firstIndex = -1;
-
-    private int lastIndex = -2;
-
-    private final List<SSAInstruction> instructions = new ArrayList<>();
-
-    @Override
-    public int getNumber() {
-      return getGraphNodeId();
-    }
-
-    @Override
-    public int getGraphNodeId() {
-      return number;
-    }
-
-    @Override
-    public void setGraphNodeId(int number) {
-      this.number = number;
-    }
-
-    @Override
-    public int getFirstInstructionIndex() {
-      return firstIndex;
-    }
-
-    void setFirstIndex(int firstIndex) {
-      this.firstIndex = firstIndex;
-    }
-
-    @Override
-    public int getLastInstructionIndex() {
-      return lastIndex;
-    }
-
-    int setLastIndex(int lastIndex) {
-      return this.lastIndex = lastIndex;
-    }
-
-    void makeExitBlock() {
-      kind = EXIT;
-    }
-
-    void makeEntryBlock() {
-      kind = ENTRY;
-    }
-
-    void makeHandlerBlock() {
-      kind = HANDLER;
-    }
-
-    @Override
-    public boolean isEntryBlock() {
-      return kind == ENTRY;
-    }
-
-    @Override
-    public boolean isExitBlock() {
-      return kind == EXIT;
-    }
-
-    public boolean isHandlerBlock() {
-      return kind == HANDLER;
-    }
-
-    @Override
-    public String toString() {
-      return "PreBB" + number + ':' + firstIndex + ".." + lastIndex;
-    }
-
-    public List<SSAInstruction> instructions() {
-      return instructions;
-    }
-
-    @Override
-    public boolean isCatchBlock() {
-      return (lastIndex > -1) && (instructions.get(0) instanceof SSAGetCaughtExceptionInstruction);
-    }
-
-    @Override
-    public IMethod getMethod() {
-      return null;
-    }
-
-    @Override
-    public Iterator<SSAInstruction> iterator() {
-      return instructions.iterator();
-    }
-  }
-
   protected static final class UnwindState {
     final CAstNode unwindAst;
 
@@ -842,6 +749,202 @@ public abstract class AstTranslator extends CAstVisitor<AstTranslator.WalkContex
    * information is stored in an {@link AstCFG}
    */
   public final class IncipientCFG extends SparseNumberedGraph<PreBasicBlock> {
+
+    /**
+     * basic block implementation used in the CFGs constructed during the IR-generating AST
+     * traversal
+     */
+    public final class PreBasicBlock implements IBasicBlock<SSAInstruction> {
+      private static final int NORMAL = 0;
+
+      private static final int HANDLER = 1;
+
+      private static final int ENTRY = 2;
+
+      private static final int EXIT = 3;
+
+      private int kind = NORMAL;
+
+      private int firstIndex = -1;
+
+      private int lastIndex = -2;
+
+      private final List<SSAInstruction> instructions = new ArrayList<>();
+
+      @Override
+      public int getNumber() {
+        return getGraphNodeId();
+      }
+
+      @Override
+      public int getGraphNodeId() {
+        return blocks.indexOf(this);
+      }
+
+      @Override
+      public void setGraphNodeId(int number) {
+        // assert false;
+      }
+
+      @Override
+      public int getFirstInstructionIndex() {
+        return firstIndex;
+      }
+
+      void setFirstIndex(int firstIndex) {
+        this.firstIndex = firstIndex;
+      }
+
+      @Override
+      public int getLastInstructionIndex() {
+        return lastIndex;
+      }
+
+      int setLastIndex(int lastIndex) {
+        return this.lastIndex = lastIndex;
+      }
+
+      void makeExitBlock() {
+        kind = EXIT;
+      }
+
+      void makeEntryBlock() {
+        kind = ENTRY;
+      }
+
+      void makeHandlerBlock() {
+        kind = HANDLER;
+      }
+
+      @Override
+      public boolean isEntryBlock() {
+        return kind == ENTRY;
+      }
+
+      @Override
+      public boolean isExitBlock() {
+        return kind == EXIT;
+      }
+
+      public boolean isHandlerBlock() {
+        return kind == HANDLER;
+      }
+
+      @Override
+      public String toString() {
+        return "PreBB" + getNumber() + ':' + firstIndex + ".." + lastIndex;
+      }
+
+      public List<SSAInstruction> instructions() {
+        return instructions;
+      }
+
+      @Override
+      public boolean isCatchBlock() {
+        return (lastIndex > -1)
+            && (instructions.get(0) instanceof SSAGetCaughtExceptionInstruction);
+      }
+
+      @Override
+      public IMethod getMethod() {
+        return null;
+      }
+
+      @Override
+      public Iterator<SSAInstruction> iterator() {
+        return instructions.iterator();
+      }
+    }
+
+    public boolean pruneDeadBlocks() {
+      Set<PreBasicBlock> liveBlocks =
+          DFS.getReachableNodes(this, Collections.singleton(entryBlock));
+
+      Set<PreBasicBlock> deadBlocks = HashSetFactory.make(blocks);
+      deadBlocks.removeAll(liveBlocks);
+      for (PreBasicBlock db : deadBlocks) {
+        this.removeNodeAndEdges(db);
+      }
+
+      return blocks.retainAll(liveBlocks);
+    }
+
+    public void sortBlocks() {
+      BiPredicate<PreBasicBlock, PreBasicBlock> fIsBackEdge =
+          GraphUtil.fIsBackEdge(this, entryBlock);
+      Graph<PreBasicBlock> sg = GraphSlicer.prune(this, fIsBackEdge.negate());
+      SlowSparseNumberedGraph<PreBasicBlock> g = SlowSparseNumberedGraph.make();
+      iterator().forEachRemaining(bb -> g.addNode(bb));
+      iterator()
+          .forEachRemaining(
+              bb -> {
+                getSuccNodes(bb)
+                    .forEachRemaining(
+                        sb -> {
+                          if (fIsBackEdge.test(bb, sb)) {
+                            Set<PreBasicBlock> succs =
+                                HashSetFactory.make(
+                                    DFS.getReachableNodes(this, Collections.singleton(sb)));
+                            succs.removeAll(
+                                DFS.getReachableNodes(
+                                    GraphInverter.invert(sg), Collections.singleton(bb)));
+                            succs.forEach(sb2 -> g.addEdge(bb, sb2));
+                          } else {
+                            g.addEdge(bb, sb);
+                          }
+                        });
+              });
+
+      Stream<PreBasicBlock> bbs =
+          StreamSupport.stream(Topological.makeTopologicalIter(g).spliterator(), false);
+      List<Pair<PreBasicBlock, Iterator2List<PreBasicBlock>>> edges =
+          bbs.map(bb -> Pair.make(bb, Iterator2Collection.toList(getSuccNodes(bb))))
+              .collect(Collectors.toList());
+
+      blocks.forEach(
+          bb -> {
+            removeNodeAndEdges(bb);
+          });
+
+      blocks.clear();
+      Set<PreBasicBlock> nodes = HashSetFactory.make();
+      edges.forEach(
+          p -> {
+            PreBasicBlock bb = p.fst;
+            if (!nodes.contains(bb)) {
+              nodes.add(bb);
+              blocks.add(bb);
+              boolean repeat;
+              Iterator2List<PreBasicBlock> edgeTargets = p.snd;
+              do {
+                repeat = false;
+                List<SSAInstruction> bi = bb.instructions();
+                if (bi.size() > 0
+                    && bi.get(bi.size() - 1) instanceof SSAConditionalBranchInstruction) {
+                  for (PreBasicBlock s : edgeTargets) {
+                    if (s.getFirstInstructionIndex() == bb.getLastInstructionIndex() + 1) {
+                      nodes.add(s);
+                      blocks.add(s);
+                      repeat = true;
+                      bb = s;
+                      for (var es : edges) {
+                        if (es.fst == s) {
+                          edgeTargets = es.snd;
+                          break;
+                        }
+                      }
+                      break;
+                    }
+                  }
+                }
+              } while (repeat);
+            }
+          });
+
+      edges.forEach(p -> addNode(p.fst));
+
+      edges.forEach(p -> p.snd.forEach(s -> addEdge(p.fst, s)));
+    }
 
     protected class Unwind {
       private final Map<PreBasicBlock, UnwindState> unwindData = new LinkedHashMap<>();
@@ -1217,6 +1320,7 @@ public abstract class AstTranslator extends CAstVisitor<AstTranslator.WalkContex
     @Override
     public void addEdge(PreBasicBlock src, PreBasicBlock dst) {
       super.addEdge(src, dst);
+      assert blocks.contains(src) && blocks.contains(dst);
       /*
             if (src.getLastInstructionIndex() >= 0) {
               SSAInstruction inst = src.instructions.get(src.instructions.size() - 1);
@@ -1382,10 +1486,14 @@ public abstract class AstTranslator extends CAstVisitor<AstTranslator.WalkContex
         CAstEntity n, IncipientCFG icfg, SymbolTable symtab, SSAInstructionFactory insts) {
       super(null);
 
+      icfg.pruneDeadBlocks();
+
       Set<PreBasicBlock> liveBlocks =
           DFS.getReachableNodes(icfg, Collections.singleton(icfg.entryBlock));
       List<PreBasicBlock> blocks = icfg.blocks;
+
       boolean hasDeadBlocks = blocks.size() > liveBlocks.size();
+      assert !hasDeadBlocks;
 
       assert checkBlockBoundaries(icfg);
 
@@ -1394,41 +1502,10 @@ public abstract class AstTranslator extends CAstVisitor<AstTranslator.WalkContex
       instructionToBlockMap = new int[liveBlocks.size()];
       pcMap = hasDeadBlocks ? new int[icfg.currentInstruction] : null;
 
-      final Map<PreBasicBlock, Collection<PreBasicBlock>> normalEdges =
-          hasDeadBlocks ? HashMapFactory.<PreBasicBlock, Collection<PreBasicBlock>>make() : null;
-      final Map<PreBasicBlock, Collection<PreBasicBlock>> exceptionalEdges =
-          hasDeadBlocks ? HashMapFactory.<PreBasicBlock, Collection<PreBasicBlock>>make() : null;
-      if (hasDeadBlocks) {
-        transferEdges(
-            liveBlocks,
-            icfg,
-            (src, dst) -> {
-              if (!normalEdges.containsKey(src)) {
-                normalEdges.put(src, HashSetFactory.<PreBasicBlock>make());
-              }
-              normalEdges.get(src).add(dst);
-            },
-            (src, dst) -> {
-              if (!exceptionalEdges.containsKey(src)) {
-                exceptionalEdges.put(src, HashSetFactory.<PreBasicBlock>make());
-              }
-              exceptionalEdges.get(src).add(dst);
-            });
-      }
-
       int instruction = 0;
       for (int i = 0, blockNumber = 0; i < blocks.size(); i++) {
         PreBasicBlock block = blocks.get(i);
-        block.setGraphNodeId(-1);
         if (liveBlocks.contains(block)) {
-          if (hasDeadBlocks) {
-            int offset = 0;
-            for (int oldPC = block.getFirstInstructionIndex();
-                offset < block.instructions().size();
-                oldPC++, offset++) {
-              pcMap[instruction + offset] = oldPC;
-            }
-          }
           if (block.getFirstInstructionIndex() >= 0) {
             block.setFirstIndex(instruction);
             block.setLastIndex((instruction += block.instructions().size()) - 1);
@@ -1453,28 +1530,7 @@ public abstract class AstTranslator extends CAstVisitor<AstTranslator.WalkContex
 
       if (DEBUG_CFG) System.err.println((getMaxNumber() + " blocks total"));
 
-      if (hasDeadBlocks) {
-        for (PreBasicBlock src : blocks) {
-          if (liveBlocks.contains(src)) {
-            if (normalEdges.containsKey(src)) {
-              for (PreBasicBlock succ : normalEdges.get(src)) {
-                if (liveBlocks.contains(succ)) {
-                  addNormalEdge(src, succ);
-                }
-              }
-            }
-            if (exceptionalEdges.containsKey(src)) {
-              for (PreBasicBlock succ : exceptionalEdges.get(src)) {
-                if (liveBlocks.contains(succ)) {
-                  addExceptionalEdge(src, succ);
-                }
-              }
-            }
-          }
-        }
-      } else {
-        transferEdges(liveBlocks, icfg, this::addNormalEdge, this::addExceptionalEdge);
-      }
+      transferEdges(liveBlocks, icfg, this::addNormalEdge, this::addExceptionalEdge);
 
       int x = 0;
       instructions = new SSAInstruction[icfg.currentInstruction];
@@ -1530,16 +1586,6 @@ public abstract class AstTranslator extends CAstVisitor<AstTranslator.WalkContex
             }
 
             instructions[x++] = inst;
-          }
-        }
-      }
-
-      if (hasDeadBlocks) {
-        for (int i = 0; i < instructions.length; i++) {
-          if (instructions[i] != null) {
-            if (instructions[i].iIndex() != i) {
-              instructions[i].setInstructionIndex(i);
-            }
           }
         }
       }
@@ -3612,7 +3658,17 @@ public abstract class AstTranslator extends CAstVisitor<AstTranslator.WalkContex
   public void closeFunctionEntity(
       final CAstEntity n, WalkContext parentContext, WalkContext functionContext) {
     // exit block
-    functionContext.cfg().makeExitBlock(functionContext.cfg().newBlock(true));
+    boolean fallThru = true;
+    IncipientCFG icfg = functionContext.cfg();
+    if (icfg.getCurrentBlock().getLastInstructionIndex() >= 0) {
+      List<SSAInstruction> insts = icfg.getCurrentBlock().instructions();
+      if (insts.get(insts.size() - 1) instanceof SSAGotoInstruction) {
+        fallThru = false;
+      }
+    }
+    icfg.makeExitBlock(icfg.newBlock(fallThru));
+
+    functionContext.cfg().pruneDeadBlocks();
 
     // create code entry stuff for this entity
     SymbolTable symtab = ((AbstractScope) functionContext.currentScope()).getUnderlyingSymtab();
