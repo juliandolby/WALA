@@ -2360,21 +2360,6 @@ public abstract class ToSource {
           return node;
         }
 
-        private boolean checkDecls(int def, List<CAstNode> decls) {
-          return decls.stream()
-              .noneMatch(
-                  d ->
-                      varDefPattern(ast.makeConstant(sourceNames.get(mergePhis.find(def))))
-                          .match(d, null));
-        }
-
-        @SuppressWarnings("unused")
-        private boolean checkDecl(int def) {
-          return ST.getNumberOfParameters() < def
-              && checkDecls(def, decls)
-              && checkDecls(def, parentDecls);
-        }
-
         private CAstNode visit(int vn) {
           if (ST.isConstant(vn)) {
             Object value = ST.getConstantValue(vn);
@@ -2402,16 +2387,6 @@ public abstract class ToSource {
                       cfg, root, loops) // TODO: should check within the given loop
                   && inst.hasDef()
                   && du.getNumberOfUses(vn) > 1) {
-
-                /*
-                if (checkDecl(mergePhis.find(vn))) {
-                  decls.add(
-                      ast.makeNode(
-                          CAstNode.DECL_STMT,
-                          ast.makeNode(CAstNode.VAR, makeVariableName(vn)),
-                          ast.makeConstant(toSource(c.getTypes().getType(vn).getTypeReference()))));
-                }
-                */
 
                 return ast.makeNode(
                     CAstNode.BLOCK_EXPR,
