@@ -15,7 +15,11 @@ import com.ibm.wala.ssa.SSAUnspecifiedExprInstruction;
 import com.ibm.wala.ssa.SSAUnspecifiedInstruction;
 import com.ibm.wala.ssa.SymbolTable;
 import com.ibm.wala.util.collections.HashMapFactory;
+import com.ibm.wala.util.collections.Iterator2Collection;
 import com.ibm.wala.util.collections.IteratorUtil;
+import com.ibm.wala.util.graph.Graph;
+import com.ibm.wala.util.graph.GraphSlicer;
+import com.ibm.wala.util.graph.traverse.DFS;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -231,6 +235,41 @@ public class LoopHelper {
         }
       }
     }
+
+    /*
+     *  An edge back to the loop header will be generated as a `continue' statement,
+     * but that is wrong in a do loop if the edge is before the loop control, since an
+     * edge to the header should skip the loop test based on the CFG, but it won't as
+     * a `continue' in a do loop.  Hence, look for such edges and reject a do loop if
+     * any are found.
+     */
+    Set<ISSABasicBlock> pbs = Iterator2Collection.toSet(cfg.getPredNodes(loop.getLoopHeader()));
+    Graph<ISSABasicBlock> loopBodyCFG =
+        GraphSlicer.prune(
+            cfg, bb -> loop.getAllBlocks().contains(bb) && bb != loop.getLoopHeader());
+    Graph<ISSABasicBlock> loopBodyCfgNoCtrl =
+        GraphSlicer.prune(
+            cfg,
+            bb ->
+                loop.getAllBlocks().contains(bb)
+                    && bb != loop.getLoopHeader()
+                    && bb != loop.getLoopControl());
+    for (ISSABasicBlock bb : loop.getAllBlocks()) {
+      if (// bb is not the loop test itself
+          !bb.equals(loop.getLoopControl())
+          // bb is not the loop header itself
+          && !bb.equals(loop.getLoopHeader())
+          // there is a path within the loop body from bb to the loop test
+          // i.e. bb is before the loop test, or at least can be
+          && DFS.getReachableNodes(loopBodyCFG, Collections.singleton(bb)).contains(loop.getLoopControl())
+          // there is a path from bb to the header without going through the test
+          // i.e. bb has an edge for which we'll use a continue
+          && !Collections.disjoint(
+              DFS.getReachableNodes(loopBodyCfgNoCtrl, Collections.singleton(bb)), pbs)) {
+        doLoop = false;
+      }
+    }
+
     return doLoop;
   }
 

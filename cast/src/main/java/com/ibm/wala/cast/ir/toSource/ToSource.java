@@ -2304,8 +2304,24 @@ public abstract class ToSource {
           root.visit(this);
           if (root.hasDef()) {
             if (node.getKind() != CAstNode.EMPTY) {
+              boolean dontDeclare = false;
               int def = root.getDef();
-              if (mergedValues.contains(mergePhis.find(def))
+              ISSABasicBlock bb = ir.getBasicBlockForInstruction(root);
+              check:
+              for (Iterator<SSAInstruction> uses = du.getUses(def); uses.hasNext(); ) {
+                SSAInstruction use = uses.next();
+                ISSABasicBlock useBb = ir.getBasicBlockForInstruction(use);
+                for (Loop l : currentLoops) {
+                  if (l.getAllBlocks().contains(bb)) {
+                    if (l.getLoopControl() == useBb && l.getLoopControl() != bb) {
+                      dontDeclare = true;
+                      break check;
+                    }
+                  }
+                }
+              }
+              if (dontDeclare
+                  || mergedValues.contains(mergePhis.find(def))
                   || du.getDef(def) instanceof SSAPhiInstruction) {
                 CAstNode val = node;
                 node =
