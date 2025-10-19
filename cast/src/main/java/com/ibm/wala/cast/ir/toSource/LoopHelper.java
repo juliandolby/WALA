@@ -255,13 +255,14 @@ public class LoopHelper {
                     && bb != loop.getLoopHeader()
                     && bb != loop.getLoopControl());
     for (ISSABasicBlock bb : loop.getAllBlocks()) {
-      if (// bb is not the loop test itself
-          !bb.equals(loop.getLoopControl())
+      if ( // bb is not the loop test itself
+      !bb.equals(loop.getLoopControl())
           // bb is not the loop header itself
           && !bb.equals(loop.getLoopHeader())
           // there is a path within the loop body from bb to the loop test
           // i.e. bb is before the loop test, or at least can be
-          && DFS.getReachableNodes(loopBodyCFG, Collections.singleton(bb)).contains(loop.getLoopControl())
+          && DFS.getReachableNodes(loopBodyCFG, Collections.singleton(bb))
+              .contains(loop.getLoopControl())
           // there is a path from bb to the header without going through the test
           // i.e. bb has an edge for which we'll use a continue
           && !Collections.disjoint(
