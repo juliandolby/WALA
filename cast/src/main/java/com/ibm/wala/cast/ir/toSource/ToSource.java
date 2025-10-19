@@ -2304,6 +2304,19 @@ public abstract class ToSource {
           root.visit(this);
           if (root.hasDef()) {
             if (node.getKind() != CAstNode.EMPTY) {
+
+              /*
+               * there is a nasty case in which a variable is used only
+               * in this region, so ought to be a local variable, but it is
+               * used in a loop control of the current loop, and hence may appear
+               * in the test of this do loop.  this may cause issues if a
+               * language requires such variables to be declared in a parent
+               * scope, as Java does.
+               *
+               * to avoid this case, do not declare this variable.  the declaration
+               * will be added later by code that checks for variables that are
+               * used but not declared.
+               */
               boolean dontDeclare = false;
               int def = root.getDef();
               ISSABasicBlock bb = ir.getBasicBlockForInstruction(root);
@@ -2320,6 +2333,7 @@ public abstract class ToSource {
                   }
                 }
               }
+
               if (dontDeclare
                   || mergedValues.contains(mergePhis.find(def))
                   || du.getDef(def) instanceof SSAPhiInstruction) {
