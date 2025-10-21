@@ -2304,8 +2304,38 @@ public abstract class ToSource {
           root.visit(this);
           if (root.hasDef()) {
             if (node.getKind() != CAstNode.EMPTY) {
+
+              /*
+               * there is a nasty case in which a variable is used only
+               * in this region, so ought to be a local variable, but it is
+               * used in a loop control of the current loop, and hence may appear
+               * in the test of this do loop.  this may cause issues if a
+               * language requires such variables to be declared in a parent
+               * scope, as Java does.
+               *
+               * to avoid this case, do not declare this variable.  the declaration
+               * will be added later by code that checks for variables that are
+               * used but not declared.
+               */
+              boolean dontDeclare = false;
               int def = root.getDef();
-              if (mergedValues.contains(mergePhis.find(def))
+              ISSABasicBlock bb = ir.getBasicBlockForInstruction(root);
+              check:
+              for (Iterator<SSAInstruction> uses = du.getUses(def); uses.hasNext(); ) {
+                SSAInstruction use = uses.next();
+                ISSABasicBlock useBb = ir.getBasicBlockForInstruction(use);
+                for (Loop l : currentLoops) {
+                  if (l.getAllBlocks().contains(bb)) {
+                    if (l.getLoopControl() == useBb && l.getLoopControl() != bb) {
+                      dontDeclare = true;
+                      break check;
+                    }
+                  }
+                }
+              }
+
+              if (dontDeclare
+                  || mergedValues.contains(mergePhis.find(def))
                   || du.getDef(def) instanceof SSAPhiInstruction) {
                 CAstNode val = node;
                 node =
@@ -2360,21 +2390,6 @@ public abstract class ToSource {
           return node;
         }
 
-        private boolean checkDecls(int def, List<CAstNode> decls) {
-          return decls.stream()
-              .noneMatch(
-                  d ->
-                      varDefPattern(ast.makeConstant(sourceNames.get(mergePhis.find(def))))
-                          .match(d, null));
-        }
-
-        @SuppressWarnings("unused")
-        private boolean checkDecl(int def) {
-          return ST.getNumberOfParameters() < def
-              && checkDecls(def, decls)
-              && checkDecls(def, parentDecls);
-        }
-
         private CAstNode visit(int vn) {
           if (ST.isConstant(vn)) {
             Object value = ST.getConstantValue(vn);
@@ -2402,16 +2417,6 @@ public abstract class ToSource {
                       cfg, root, loops) // TODO: should check within the given loop
                   && inst.hasDef()
                   && du.getNumberOfUses(vn) > 1) {
-
-                /*
-                if (checkDecl(mergePhis.find(vn))) {
-                  decls.add(
-                      ast.makeNode(
-                          CAstNode.DECL_STMT,
-                          ast.makeNode(CAstNode.VAR, makeVariableName(vn)),
-                          ast.makeConstant(toSource(c.getTypes().getType(vn).getTypeReference()))));
-                }
-                */
 
                 return ast.makeNode(
                     CAstNode.BLOCK_EXPR,
