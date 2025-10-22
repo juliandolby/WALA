@@ -525,6 +525,10 @@ public abstract class ToSource {
       return types;
     }
 
+    public IntegerUnionFind getMergePhis() {
+      return mergePhis;
+    }
+
     private final boolean isTopLevel;
     private int parentPrecedence;
     private final TypeInference types;
@@ -626,11 +630,7 @@ public abstract class ToSource {
     protected final CAstSourcePositionRecorder positionRecorder;
     RegionTreeNode parent;
 
-    protected IntegerUnionFind getMergePhis() {
-      return mergePhis;
-    }
-
-    public CAstNode makeVariableName(int vn) {
+    protected CAstNode makeVariableName(int vn) {
       return ast.makeConstant(sourceNames.get(vn));
     }
 
