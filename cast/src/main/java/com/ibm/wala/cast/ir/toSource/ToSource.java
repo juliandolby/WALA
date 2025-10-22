@@ -142,11 +142,11 @@ public abstract class ToSource {
 
   protected abstract String nameToJava(String name, boolean isTypeName);
 
-  private static CAstPattern varDefPattern(CAstNode varName) {
+  public static CAstPattern varDefPattern(CAstNode varName) {
     return CAstPattern.parse("DECL_STMT(VAR(\"" + varName.getValue() + "\"),**)");
   }
 
-  private static CAstPattern varUsePattern(CAstNode varName) {
+  public static CAstPattern varUsePattern(CAstNode varName) {
     return CAstPattern.parse("VAR(\"" + varName.getValue() + "\")");
   }
 
@@ -525,10 +525,6 @@ public abstract class ToSource {
       return types;
     }
 
-    public IntegerUnionFind getMergePhis() {
-      return mergePhis;
-    }
-
     private final boolean isTopLevel;
     private int parentPrecedence;
     private final TypeInference types;
@@ -630,7 +626,11 @@ public abstract class ToSource {
     protected final CAstSourcePositionRecorder positionRecorder;
     RegionTreeNode parent;
 
-    protected CAstNode makeVariableName(int vn) {
+    public IntegerUnionFind getMergePhis() {
+      return mergePhis;
+    }
+
+    public CAstNode makeVariableName(int vn) {
       return ast.makeConstant(sourceNames.get(vn));
     }
 
