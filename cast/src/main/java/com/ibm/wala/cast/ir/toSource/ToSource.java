@@ -142,11 +142,11 @@ public abstract class ToSource {
 
   protected abstract String nameToJava(String name, boolean isTypeName);
 
-  public static CAstPattern varDefPattern(CAstNode varName) {
+  private static CAstPattern varDefPattern(CAstNode varName) {
     return CAstPattern.parse("DECL_STMT(VAR(\"" + varName.getValue() + "\"),**)");
   }
 
-  public static CAstPattern varUsePattern(CAstNode varName) {
+  private static CAstPattern varUsePattern(CAstNode varName) {
     return CAstPattern.parse("VAR(\"" + varName.getValue() + "\")");
   }
 
@@ -626,7 +626,7 @@ public abstract class ToSource {
     protected final CAstSourcePositionRecorder positionRecorder;
     RegionTreeNode parent;
 
-    public IntegerUnionFind getMergePhis() {
+    protected IntegerUnionFind getMergePhis() {
       return mergePhis;
     }
 
