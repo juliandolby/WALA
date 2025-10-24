@@ -4005,7 +4005,7 @@ public abstract class ToSource {
       inits.add(ast.getChild(0));
     }
 
-    Map<Integer, CAstNode> undefinedVaribales = findUndefinedVaribales(ir, root, ast, done);
+    Map<Integer, CAstNode> undefinedVaribales = findUndefinedVariables(ir, root, ast, done);
     undefinedVaribales
         .entrySet()
         .forEach(
@@ -4101,7 +4101,7 @@ public abstract class ToSource {
     }
   }
 
-  protected Map<Integer, CAstNode> findUndefinedVaribales(
+  protected Map<Integer, CAstNode> findUndefinedVariables(
       final IR ir, final RegionTreeNode root, final CAstNode ast, final MutableIntSet done) {
     Map<Integer, CAstNode> undefinedVariables = HashMapFactory.make();
     for (int vn = ir.getSymbolTable().getNumberOfParameters() + 1;
