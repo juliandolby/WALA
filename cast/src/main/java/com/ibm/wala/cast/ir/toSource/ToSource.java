@@ -4005,8 +4005,8 @@ public abstract class ToSource {
       inits.add(ast.getChild(0));
     }
 
-    Map<Integer, CAstNode> undefinedVaribales = findUndefinedVariables(ir, root, ast, done);
-    undefinedVaribales
+    Map<Integer, CAstNode> undefinedVariables = findUndefinedVariables(ir, root, ast, done);
+    undefinedVariables
         .entrySet()
         .forEach(
             entry -> {
