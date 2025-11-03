@@ -4047,22 +4047,18 @@ public abstract class ToSource {
       inits.add(ast.getChild(0));
     }
 
-    for (int vn = ir.getSymbolTable().getNumberOfParameters() + 1;
-        vn <= ir.getSymbolTable().getMaxValueNumber();
-        vn++) {
-      CAstNode srcName = cast.makeConstant(root.sourceNames.get(vn));
-      if (!done.contains(root.mergePhis.find(vn))
-          && !CAstPattern.findAll(varUsePattern(srcName), ast).isEmpty()
-          && CAstPattern.findAll(varDefPattern(srcName), ast).isEmpty()) {
-        if (DEBUG) System.err.println("found " + vn);
-        done.add(root.mergePhis.find(vn));
-        inits.add(
-            cast.makeNode(
-                CAstNode.DECL_STMT,
-                cast.makeNode(CAstNode.VAR, srcName),
-                cast.makeConstant(toSource(types.getType(vn).getTypeReference()))));
-      }
-    }
+    Map<Integer, CAstNode> undefinedVariables = findUndefinedVariables(ir, root, ast, done);
+    undefinedVariables
+        .entrySet()
+        .forEach(
+            entry -> {
+              inits.add(
+                  cast.makeNode(
+                      CAstNode.DECL_STMT,
+                      cast.makeNode(CAstNode.VAR, entry.getValue()),
+                      cast.makeConstant(
+                          toSource(types.getType(entry.getKey()).getTypeReference()))));
+            });
 
     // search and decide if jump should be defined
     if (CAstHelper.hasVarAssigned(ast, CT_LOOP_JUMP_VAR_NAME)) {
@@ -4145,6 +4141,24 @@ public abstract class ToSource {
     if (m.isClinit() && (ast.getKind() != CAstNode.BLOCK_STMT || ast.getChildCount() == 1)) {
       out.println("  }");
     }
+  }
+
+  protected Map<Integer, CAstNode> findUndefinedVariables(
+      final IR ir, final RegionTreeNode root, final CAstNode ast, final MutableIntSet done) {
+    Map<Integer, CAstNode> undefinedVariables = HashMapFactory.make();
+    for (int vn = ir.getSymbolTable().getNumberOfParameters() + 1;
+        vn <= ir.getSymbolTable().getMaxValueNumber();
+        vn++) {
+      CAstNode srcName = root.makeVariableName(vn);
+      if (!done.contains(root.mergePhis.find(vn))
+          && !CAstPattern.findAll(varUsePattern(srcName), ast).isEmpty()
+          && CAstPattern.findAll(varDefPattern(srcName), ast).isEmpty()) {
+        if (DEBUG) System.err.println("found " + vn);
+        done.add(root.mergePhis.find(vn));
+        undefinedVariables.put(vn, srcName);
+      }
+    }
+    return undefinedVariables;
   }
 
   protected ToJavaVisitor makeToJavaVisitor(
