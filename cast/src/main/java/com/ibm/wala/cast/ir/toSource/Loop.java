@@ -2,7 +2,9 @@ package com.ibm.wala.cast.ir.toSource;
 
 import com.ibm.wala.ssa.ISSABasicBlock;
 import com.ibm.wala.util.collections.HashSetFactory;
+import com.ibm.wala.util.collections.Iterator2Collection;
 import com.ibm.wala.util.collections.Pair;
+import com.ibm.wala.util.graph.Graph;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
@@ -201,19 +203,29 @@ public class Loop {
         .get();
   }
 
-  public Set<ISSABasicBlock> getLastBlockPerPart() {
+  public Set<ISSABasicBlock> getLastBlockPerPart(Graph<ISSABasicBlock> cfg) {
+    Set<ISSABasicBlock> others = HashSetFactory.make(allBlocks);
+    others.remove(loopHeader);
+
     return parts.stream()
         .map(
             pp ->
                 pp.getAllBlocks().stream()
-                    .max(Comparator.comparing(ISSABasicBlock::getNumber))
-                    .get())
-        .collect(Collectors.toSet());
+                    .filter(
+                        bb -> !others.containsAll(Iterator2Collection.toList(cfg.getSuccNodes(bb))))
+                    .collect(Collectors.toSet()))
+        .reduce(
+            (a, b) -> {
+              Set<ISSABasicBlock> x = HashSetFactory.make(a);
+              x.addAll(b);
+              return x;
+            })
+        .get();
   }
 
-  public boolean isLastBlockOfMiddlePart(ISSABasicBlock lastBlock) {
+  public boolean isLastBlockOfMiddlePart(Graph<ISSABasicBlock> cfg, ISSABasicBlock lastBlock) {
     if (parts.size() > 1) {
-      return getLastBlockPerPart().contains(lastBlock);
+      return getLastBlockPerPart(cfg).contains(lastBlock);
     }
     return false;
   }

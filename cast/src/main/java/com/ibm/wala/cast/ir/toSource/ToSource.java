@@ -1398,7 +1398,8 @@ public abstract class ToSource {
                                     if (DEBUG)
                                       System.err.println(
                                           "checking " + k.fst + " with " + bb.getLastInstruction());
-                                    if (k.fst.equals(bb.getLastInstruction())) {
+                                    if (k.fst.equals(bb.getLastInstruction())
+                                    /*&& !es.getValue().contains(k.snd)*/ ) {
                                       if (!children.containsKey(k.fst)) {
                                         children.put(k.fst, HashMapFactory.make());
                                       }
@@ -1415,6 +1416,35 @@ public abstract class ToSource {
                                   });
                         });
               });
+
+      /*
+            Set<Pair<SSAInstruction, ISSABasicBlock>> key = Collections.singleton(Pair.make(r, l));
+            if (regions.containsKey(key)) {
+              Set<ISSABasicBlock> bbs = regions.get(key);
+              bbs.forEach(
+                  bb -> {
+                    if (bb.getLastInstructionIndex() >= 0) {
+                      SSAInstruction inst = bb.getLastInstruction();
+                      if (inst instanceof SSAConditionalBranchInstruction) {
+                        ISSABasicBlock target =
+                            ir.getControlFlowGraph()
+                                .getBlockForInstruction(
+                                    ((SSAConditionalBranchInstruction) inst).getTarget());
+                        ISSABasicBlock fallThru =
+                            ir.getControlFlowGraph().getBlockForInstruction(inst.iIndex() + 1);
+                        for (ISSABasicBlock sb : new ISSABasicBlock[] {target, fallThru}) {
+                          if (bbs.contains(sb)) {
+                            if (!children.containsKey(inst)) {
+                              children.put(inst, HashMapFactory.make());
+                            }
+                            children.get(inst).put(sb, makeChild(Pair.make(r, bb)));
+                          }
+                        }
+                      }
+                    }
+                  });
+            }
+      */
       if (DEBUG) System.err.println("children for " + this + ": " + children);
     }
 
@@ -2786,9 +2816,13 @@ public abstract class ToSource {
           ISSABasicBlock notTaken;
           ISSABasicBlock taken = cfg.getBlockForInstruction(instruction.getTarget());
           if (cc.containsKey(taken)) {
-            HashMap<ISSABasicBlock, RegionTreeNode> copy = HashMapFactory.make(cc);
-            assert copy.remove(taken) != null;
-            notTaken = copy.keySet().iterator().next();
+            if (cc.size() > 1) {
+              HashMap<ISSABasicBlock, RegionTreeNode> copy = HashMapFactory.make(cc);
+              assert copy.remove(taken) != null;
+              notTaken = copy.keySet().iterator().next();
+            } else {
+              notTaken = null;
+            }
             List<List<SSAInstruction>> takenChunks =
                 regionChunks.get(Pair.make(instruction, taken));
             RegionTreeNode tr = cc.get(taken);
@@ -2799,42 +2833,48 @@ public abstract class ToSource {
             assert cc.size() == 1;
             notTaken = cc.keySet().iterator().next();
           }
-          assert notTaken != null;
 
-          Pair<SSAConditionalBranchInstruction, ISSABasicBlock> notTakenKey =
-              Pair.make(instruction, notTaken);
-          List<List<SSAInstruction>> notTakenChunks = regionChunks.get(notTakenKey);
-          RegionTreeNode fr = cc.get(notTaken);
-          List<CAstNode> notTakenBlock = handleBlock(notTakenChunks, fr, currentLoops);
+          List<CAstNode> notTakenBlock;
+          if (notTaken != null) {
+            Pair<SSAConditionalBranchInstruction, ISSABasicBlock> notTakenKey =
+                Pair.make(instruction, notTaken);
+            List<List<SSAInstruction>> notTakenChunks = regionChunks.get(notTakenKey);
+            RegionTreeNode fr = cc.get(notTaken);
+            notTakenBlock = handleBlock(notTakenChunks, fr, currentLoops);
+          } else {
+            notTakenBlock = null;
+          }
 
           if (loop != null
               && loop.getLoopBreakers().contains(branchBB)
               && !loop.getLoopHeader().equals(branchBB)) {
             if (loop.getLoopExits().contains(notTaken)) {
-              CAstNode lastNode = notTakenBlock.get(notTakenBlock.size() - 1);
-              if (notTakenBlock.size() > 1
-                  && lastNode.getKind() == CAstNode.BLOCK_STMT
-                  && lastNode.getChildCount() == 1
-                  && lastNode.getChild(0).getKind() == CAstNode.GOTO) {
-                // when there are two goto instruction, the second from last will be the break
-                lastNode = notTakenBlock.get(notTakenBlock.size() - 2);
-              }
-              if (CAstHelper.endingWithBreakOrContinue(lastNode)
-                  || CAstHelper.endingWithTermination(lastNode)) {
-                if (DEBUG)
-                  System.err.println(
-                      " notTakenBlock is end with break, no need to add break"); // TODO: need it
-                // for
-                // a while to see
-                // when to add break
-              } else {
-                if (DEBUG)
-                  System.err.println(
-                      "notTakenBlock is having nodes and not end with break, need to add break"); // TODO: need it for a while to see when to add break
-                boolean useReturn =
-                    cfg.getNormalSuccessors(notTaken).contains(cfg.exit())
-                        && cfg.getNormalSuccessors(notTaken).size() == 1;
-                notTakenBlock.add(ast.makeNode(useReturn ? CAstNode.RETURN : CAstNode.BREAK));
+              if (notTakenBlock != null) {
+                CAstNode lastNode = notTakenBlock.get(notTakenBlock.size() - 1);
+                if (notTakenBlock.size() > 1
+                    && lastNode.getKind() == CAstNode.BLOCK_STMT
+                    && lastNode.getChildCount() == 1
+                    && lastNode.getChild(0).getKind() == CAstNode.GOTO) {
+                  // when there are two goto instruction, the second from last will be the break
+                  lastNode = notTakenBlock.get(notTakenBlock.size() - 2);
+                }
+                if (CAstHelper.endingWithBreakOrContinue(lastNode)
+                    || CAstHelper.endingWithTermination(lastNode)) {
+                  if (DEBUG)
+                    System.err.println(
+                        " notTakenBlock is end with break, no need to add break"); // TODO: need it
+                  // for
+                  // a while to see
+                  // when to add break
+                } else {
+                  if (DEBUG)
+                    System.err.println(
+                        "notTakenBlock is having nodes and not end with break, need to add break"); // TODO: need it for a while to see when to add break
+                  boolean useReturn =
+                      cfg.getNormalSuccessors(notTaken).contains(cfg.exit())
+                          && cfg.getNormalSuccessors(notTaken).size() == 1;
+                  notTakenBlock.add(ast.makeNode(useReturn ? CAstNode.RETURN : CAstNode.BREAK));
+                }
               }
 
               CAstHelper.generateInnerLoopJumpToHeaderOrTailTrue(
@@ -2942,13 +2982,15 @@ public abstract class ToSource {
             } else notTakenBlock.add(0, ast.makeConstant(elsePhrase));
           }
 
-          CAstNode notTakenStmt =
-              notTakenBlock.size() == 1
-                  ? notTakenBlock.iterator().next()
-                  : ast.makeNode(
-                      CAstNode.BLOCK_STMT,
-                      notTakenBlock.toArray(new CAstNode[notTakenBlock.size()]));
-
+          CAstNode notTakenStmt = null;
+          if (notTakenBlock != null) {
+            notTakenStmt =
+                notTakenBlock.size() == 1
+                    ? notTakenBlock.iterator().next()
+                    : ast.makeNode(
+                        CAstNode.BLOCK_STMT,
+                        notTakenBlock.toArray(new CAstNode[notTakenBlock.size()]));
+          }
           notTakenStmt = checkLinePhi(notTakenStmt, instruction, notTaken);
 
           CAstNode takenStmt = null;

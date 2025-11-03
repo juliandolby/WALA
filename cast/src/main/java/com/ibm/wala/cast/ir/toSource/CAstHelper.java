@@ -88,11 +88,13 @@ public class CAstHelper {
                   ? thenBranch.getChild(0).getChildren()
                   : thenBranch.getChildren());
       List<CAstNode> elseBranchList =
-          removeGOToAtTail(
-              (elseBranch.getChildCount() == 1
-                      && elseBranch.getChild(0).getKind() == CAstNode.BLOCK_STMT)
-                  ? elseBranch.getChild(0).getChildren()
-                  : elseBranch.getChildren());
+          elseBranch == null
+              ? Collections.singletonList(ast.makeNode(CAstNode.EMPTY))
+              : removeGOToAtTail(
+                  (elseBranch.getChildCount() == 1
+                          && elseBranch.getChild(0).getKind() == CAstNode.BLOCK_STMT)
+                      ? elseBranch.getChild(0).getChildren()
+                      : elseBranch.getChildren());
       List<CAstNode> commonTail = gatherCommonTail(thenBranchList, elseBranchList);
       if (commonTail.size() > 0) {
         // if there are common tail, no need to check break or termination

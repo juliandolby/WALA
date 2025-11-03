@@ -701,7 +701,7 @@ public class LoopHelper {
                         .get(ll)
                         .getLoopControl()
                         .equals(ll.getLoopBreakerByExit(loopExit))
-                    && childParentMap.get(ll).isLastBlockOfMiddlePart(loopExit))
+                    && childParentMap.get(ll).isLastBlockOfMiddlePart(cfg, loopExit))
                 || (ll.getLoopExits().size() > 1
                     && gotoHeader(cfg, childParentMap.get(ll), loopExit)
                     // TODO: not sure how to tell a regular return to top by PERFORM and GOTO top
@@ -760,7 +760,7 @@ public class LoopHelper {
 
   public static boolean needsContinue(
       Loop loop, ISSABasicBlock bb, PrunedCFG<SSAInstruction, ISSABasicBlock> cfg) {
-    Set<ISSABasicBlock> lastBlocks = loop.getLastBlockPerPart();
+    Set<ISSABasicBlock> lastBlocks = loop.getLastBlockPerPart(cfg);
     if (lastBlocks.contains(bb)) {
       // if there's only one loop part and this is the last block then no need to create continue
       if (lastBlocks.size() == 1) return false;
